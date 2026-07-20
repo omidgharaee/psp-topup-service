@@ -27,6 +27,7 @@ public static class DependencyInjection
             // Consumers are registered here. Each consumer type maps to its own
             // queue (kebab-case-named) so a failing consumer does not block others.
             cfg.AddConsumer<PaymentCompletedConsumer>();
+            cfg.AddConsumer<PaymentRequestedConsumer>();
 
             cfg.UsingRabbitMq((context, bus) =>
             {

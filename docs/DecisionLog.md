@@ -445,3 +445,38 @@ exhaustion is handled by the factory's `HttpClientHandler` pool.
   the pipeline is `HamrahAvalException` (terminal, classified).
 - 4 unit tests exercise the pipeline against an in-memory HTTP handler: success,
   retry-then-success, all-retries-fail, business-rejection.
+
+---
+
+## ADR-0016 — Saga-style reverse payment on terminal topup failure
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+When the MCI topup fails terminally after all Polly retries, the Bank payment
+has already settled. Leaving the customer charged without a topup is
+unacceptable; the money MUST be returned.
+
+### Decision
+The `PerformTopupCommandHandler` orchestrates a compensation saga:
+1. Topup attempt against MCI (Polly pipeline inside the client).
+2. On success: `MarkTopupCompleted` + outbox TopupCompleted (terminal success).
+3. On terminal failure: `MarkTopupFailed` → `InitiateReversal` → call the Bank
+   reverse API (own Polly pipeline) → `MarkPaymentReversed` + outbox
+   PaymentReversed (terminal failure with explicit reversal).
+4. If the Bank reverse itself fails: the aggregate stays in TopupInProgress
+   with a `ReverseRecord` in Failed state for manual intervention. The handler
+   does NOT throw — operator reconciliation handles it.
+
+The whole saga is one atomic unit of work so the aggregate state and the outbox
+message commit together. A second consumer (`PaymentRequestedConsumer`) wraps
+the command with the inbox consume-local idempotency gate.
+
+### Consequences
+- A customer is never charged without a topup OR a refund.
+- The Bank reverse has its own independent retries (BankOptions) so transient
+  bank failures do not need operator intervention.
+- Hard bank outages surface as a Failed reversal record — visible, not lost.
+- 5 unit tests cover topup success, MCI failure -> reversal, bank reverse
+  failure -> manual intervention, terminal replay, and missing aggregate.

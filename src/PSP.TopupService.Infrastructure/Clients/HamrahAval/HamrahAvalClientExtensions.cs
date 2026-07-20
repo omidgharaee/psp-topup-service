@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PSP.TopupService.Application.Topups.Abstractions;
+using PSP.TopupService.Infrastructure.Clients.Bank;
 using PSP.TopupService.Infrastructure.Clients.Configuration;
 using PSP.TopupService.Infrastructure.Clients.HamrahAval;
 
@@ -30,6 +31,21 @@ public static class HamrahAvalClientExtensions
         });
 
         services.AddHttpClient<IHamrahAvalClient, HamrahAvalClient>();
+        return services;
+    }
+
+    /// <summary>Registers the Bank client with its own Polly pipeline.</summary>
+    public static IServiceCollection AddBankClient(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<BankOptions>(configuration.GetSection(BankOptions.SectionName));
+        services.AddSingleton<BankOptions>(sp =>
+        {
+            var opts = new BankOptions();
+            configuration.GetSection(BankOptions.SectionName).Bind(opts);
+            return opts;
+        });
+
+        services.AddHttpClient<IBankClient, BankClient>();
         return services;
     }
 }
