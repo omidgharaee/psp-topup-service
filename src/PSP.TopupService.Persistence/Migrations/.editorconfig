@@ -1,0 +1,7 @@
+# EF Core migrations are tool-generated code; do not apply style rules here.
+[*.cs]
+generated_code = true
+dotnet_diagnostic.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.SA1413.severity = none
+dotnet_diagnostic.SA1600.severity = none

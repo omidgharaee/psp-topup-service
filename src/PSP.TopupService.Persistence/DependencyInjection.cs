@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PSP.TopupService.Application.Common.Abstractions;
 using PSP.TopupService.Application.Common.Outbox;
 using PSP.TopupService.Persistence.Context;
+using PSP.TopupService.Persistence.Inbox;
 using PSP.TopupService.Persistence.Interceptors;
 using PSP.TopupService.Persistence.Outbox;
 using PSP.TopupService.Persistence.Repositories;
@@ -40,6 +41,11 @@ public static class DependencyInjection
         services.AddScoped<ITopupRepository, TopupRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IOutboxWriter, EfOutboxWriter>();
+
+        // Outbox publisher and inbox store use a short-lived DbContext (the
+        // background worker resolves them per iteration).
+        services.AddScoped<IOutboxPublisher, EfOutboxPublisher>();
+        services.AddScoped<IInboxStore, EfInboxStore>();
 
         return services;
     }

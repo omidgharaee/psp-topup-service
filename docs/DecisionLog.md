@@ -306,3 +306,38 @@ Use `Npgsql.EntityFrameworkCore.PostgreSQL` with:
   de-dup paths index-only scans.
 - An `AuditSaveChangesInterceptor` writes the audit trail inside SaveChanges,
   so the trail cannot be bypassed by application code.
+
+---
+
+## ADR-0012 — Atomic lease for outbox publishing; consume-local for inbox
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+With multiple Worker instances running, two could pick the same outbox row and
+publish twice. Conversely, on the consumer side, the broker may redeliver a
+message (network blip, consumer crash) and the business logic must run exactly
+once.
+
+### Decision
+**Outbox lease** is a single atomic SQL statement:
+`UPDATE outbox_messages SET status='InProgress' ... WHERE id IN (SELECT id ...
+FOR UPDATE SKIP LOCKED LIMIT N) RETURNING id`. The `FOR UPDATE SKIP LOCKED`
+clause guarantees no two workers ever lease the same row, even under concurrent
+execution. Leases carry a `locked_until_utc` so a crashed worker's rows are
+reclaimed by a periodic sweeper.
+
+**Inbox consume-local**: before processing a message the consumer inserts an
+`inbox_messages` row with id `{consumer}:{messageId}`. The unique index on
+`(message_id, consumer)` makes a duplicate insert fail with sqlstate 23505,
+which we translate to "already processed, skip". The inbox insert commits in
+the SAME transaction as the business change.
+
+### Consequences
+- At-least-once delivery from the broker becomes effectively-once processing.
+- Workers scale horizontally without coordination — the database is the lock.
+- Dead-lettering is intrinsic: after `max_attempts` retries a row is marked
+  `DeadLettered` for manual intervention, never silently dropped.
+- 6 unit tests pin the envelope wire contract so consumer-side routing by
+  `$type` cannot silently drift.
