@@ -1,17 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PSP.Mock.Bank.Api</RootNamespace>
+    <Description>Bank simulator: payment confirmation, async completion, reverse and failure injection.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+    <ProjectReference Include="..\PSP.TopupService.Contracts\PSP.TopupService.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\PSP.TopupService.Contracts\PSP.TopupService.Contracts.csproj" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="StyleCop.Analyzers" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
