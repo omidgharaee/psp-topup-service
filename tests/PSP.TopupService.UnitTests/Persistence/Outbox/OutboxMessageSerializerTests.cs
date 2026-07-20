@@ -20,14 +20,17 @@ public class OutboxMessageSerializerTests
     [Fact]
     public void SerializeTopupCreated_Should_Produce_Envelope_With_Type_And_Version()
     {
+        var correlationId = Guid.NewGuid();
         var payload = _serializer.SerializeTopupCreated(
             Guid.NewGuid(),
             MobileNumber.Create("09121234567"),
-            Money.Create(50_000));
+            Money.Create(50_000),
+            correlationId);
 
         using var doc = JsonDocument.Parse(payload);
         doc.RootElement.GetProperty("$type").GetString().Should().Be("TopupCreated");
         doc.RootElement.GetProperty("version").GetInt32().Should().Be(1);
+        doc.RootElement.GetProperty("correlationId").GetGuid().Should().Be(correlationId);
         doc.RootElement.GetProperty("payload").GetProperty("mobileNumber").GetString().Should().Be("09121234567");
         doc.RootElement.GetProperty("payload").GetProperty("amount").GetDecimal().Should().Be(50_000m);
         doc.RootElement.GetProperty("payload").GetProperty("currency").GetString().Should().Be("IRR");
@@ -39,7 +42,7 @@ public class OutboxMessageSerializerTests
         var topupId = Guid.NewGuid();
         var bankRef = TransactionReference.Create("BANK-1", "BANK");
 
-        var payload = _serializer.SerializePaymentRequested(topupId, Money.Create(20_000), bankRef);
+        var payload = _serializer.SerializePaymentRequested(topupId, Money.Create(20_000), bankRef, Guid.NewGuid());
 
         using var doc = JsonDocument.Parse(payload);
         doc.RootElement.GetProperty("$type").GetString().Should().Be("PaymentRequested");
@@ -54,7 +57,7 @@ public class OutboxMessageSerializerTests
         var topupId = Guid.NewGuid();
         var mciRef = TransactionReference.Create("MCI-9", "MCI");
 
-        var payload = _serializer.SerializeTopupCompleted(topupId, mciRef);
+        var payload = _serializer.SerializeTopupCompleted(topupId, mciRef, Guid.NewGuid());
 
         using var doc = JsonDocument.Parse(payload);
         doc.RootElement.GetProperty("$type").GetString().Should().Be("TopupCompleted");
@@ -68,7 +71,7 @@ public class OutboxMessageSerializerTests
         var topupId = Guid.NewGuid();
         var reversalRef = TransactionReference.Generate("REVERSAL");
 
-        var payload = _serializer.SerializePaymentReversed(topupId, reversalRef, TopupFailureReason.TopupProviderError);
+        var payload = _serializer.SerializePaymentReversed(topupId, reversalRef, TopupFailureReason.TopupProviderError, Guid.NewGuid());
 
         using var doc = JsonDocument.Parse(payload);
         doc.RootElement.GetProperty("$type").GetString().Should().Be("PaymentReversed");
@@ -79,7 +82,7 @@ public class OutboxMessageSerializerTests
     [Fact]
     public void Envelopes_Should_Always_Carry_OccurredOnUtc()
     {
-        var payload = _serializer.SerializeTopupCreated(Guid.NewGuid(), MobileNumber.Create("09121234567"), Money.Create(10_000));
+        var payload = _serializer.SerializeTopupCreated(Guid.NewGuid(), MobileNumber.Create("09121234567"), Money.Create(10_000), Guid.NewGuid());
 
         using var doc = JsonDocument.Parse(payload);
         var occurred = doc.RootElement.GetProperty("occurredOnUtc").GetDateTime();
@@ -89,7 +92,7 @@ public class OutboxMessageSerializerTests
     [Fact]
     public void Envelopes_Should_Use_CamelCase_Property_Naming()
     {
-        var payload = _serializer.SerializeTopupCompleted(Guid.NewGuid(), TransactionReference.Create("X", "MCI"));
+        var payload = _serializer.SerializeTopupCompleted(Guid.NewGuid(), TransactionReference.Create("X", "MCI"), Guid.NewGuid());
 
         payload.Should().Contain("\"$type\"");
         payload.Should().Contain("\"topupId\"");

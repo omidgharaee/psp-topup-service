@@ -25,25 +25,25 @@ public sealed class EfOutboxWriter : IOutboxWriter
 
     public Task EnqueueTopupCreatedAsync(Guid topupId, MobileNumber mobileNumber, Money amount, Guid correlationId, CancellationToken cancellationToken = default)
     {
-        var payload = _serializer.SerializeTopupCreated(topupId, mobileNumber, amount);
+        var payload = _serializer.SerializeTopupCreated(topupId, mobileNumber, amount, correlationId);
         return AddAsync(OutboxRoutes.TopupEventsExchange, payload, correlationId, cancellationToken);
     }
 
     public Task EnqueuePaymentRequestedAsync(Guid topupId, Money amount, TransactionReference bankReference, Guid correlationId, CancellationToken cancellationToken = default)
     {
-        var payload = _serializer.SerializePaymentRequested(topupId, amount, bankReference);
+        var payload = _serializer.SerializePaymentRequested(topupId, amount, bankReference, correlationId);
         return AddAsync(OutboxRoutes.PaymentRequestedRoutingKey, payload, correlationId, cancellationToken);
     }
 
     public Task EnqueueTopupCompletedAsync(Guid topupId, TransactionReference mciReference, Guid correlationId, CancellationToken cancellationToken = default)
     {
-        var payload = _serializer.SerializeTopupCompleted(topupId, mciReference);
+        var payload = _serializer.SerializeTopupCompleted(topupId, mciReference, correlationId);
         return AddAsync(OutboxRoutes.TopupEventsExchange, payload, correlationId, cancellationToken);
     }
 
     public Task EnqueuePaymentReversedAsync(Guid topupId, TransactionReference reversalReference, TopupFailureReason reason, Guid correlationId, CancellationToken cancellationToken = default)
     {
-        var payload = _serializer.SerializePaymentReversed(topupId, reversalReference, reason);
+        var payload = _serializer.SerializePaymentReversed(topupId, reversalReference, reason, correlationId);
         return AddAsync(OutboxRoutes.TopupEventsExchange, payload, correlationId, cancellationToken);
     }
 

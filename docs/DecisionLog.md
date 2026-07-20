@@ -341,3 +341,36 @@ the SAME transaction as the business change.
   `DeadLettered` for manual intervention, never silently dropped.
 - 6 unit tests pin the envelope wire contract so consumer-side routing by
   `$type` cannot silently drift.
+
+---
+
+## ADR-0013 — Outbox publisher as a background worker; MassTransit for the bus
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+The transactional outbox guarantees publish intent survives crashes, but
+something has to actually drain it to RabbitMQ. The bus client must also be
+abstracted so application code never depends on MassTransit types.
+
+### Decision
+- A `OutboxPublisherWorker` BackgroundService runs the drain loop: reclaim
+  expired leases, lease a batch, publish each row, mark outcome. The worker
+  resolves scoped services per iteration so the DbContext lifetime stays short.
+- MassTransit is wired in Infrastructure behind `IMessagePublisher`. The
+  publisher sets the broker `MessageId` to the outbox row id and propagates the
+  correlation id via headers, so broker-level de-dup and consumer-side tracing
+  both work.
+- An `IIntegrationEventMapper` rebuilds the typed `IIntegrationEvent` from the
+  outbox envelope so MassTransit receives a real object (not a JSON string).
+  The mapper accepts both short and full type names to stay forgiving of
+  producer conventions.
+
+### Consequences
+- Workers scale horizontally — the atomic SQL lease (ADR-0012) prevents double
+  publication.
+- The Worker host is the only place that depends on MassTransit directly; the
+  API host stays free of broker concerns.
+- The mapper is the single point where the outbox wire contract meets the
+  strongly-typed event contracts; 7 unit tests pin the round-trip.
