@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\PSP.TopupService.SharedKernel\PSP.TopupService.SharedKernel.csproj" />
     <ProjectReference Include="..\..\src\PSP.TopupService.Domain\PSP.TopupService.Domain.csproj" />
     <ProjectReference Include="..\..\src\PSP.TopupService.Application\PSP.TopupService.Application.csproj" />
+    <ProjectReference Include="..\..\src\PSP.TopupService.Persistence\PSP.TopupService.Persistence.csproj" />
   </ItemGroup>
 
 </Project>
