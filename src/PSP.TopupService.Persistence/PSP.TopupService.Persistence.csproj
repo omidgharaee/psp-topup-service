@@ -1,4 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PSP.TopupService.Persistence</RootNamespace>
+    <Description>Persistence: EF Core DbContext, EF configurations, repositories and outbox/inbox state.</Description>
+  </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PSP.TopupService.Application\PSP.TopupService.Application.csproj" />
@@ -6,10 +11,14 @@
     <ProjectReference Include="..\PSP.TopupService.SharedKernel\PSP.TopupService.SharedKernel.csproj" />
   </ItemGroup>
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="EFCore.NamingConventions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="StyleCop.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
 
 </Project>

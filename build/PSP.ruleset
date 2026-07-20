@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RuleSet Name="PSP Topup Service Rules" Description="Code analysis ruleset for the PSP Topup Service solution." ToolsVersion="17.0">
+  <Localization ResourceAssembly="Microsoft.VisualStudio.CodeAnalysis.RuleSets.Strings" ResourceBaseName="Microsoft.VisualStudio.CodeAnalysis.RuleSets.Strings.Localized">
+    <Name Resource="PSP_Topup_Name" />
+    <Description Resource="PSP_Topup_Description" />
+  </Localization>
+
+  <!--
+    Recommended defaults. We rely on .editorconfig + analyzers for the granular
+    rule configuration; this ruleset exists primarily to keep the legacy
+    CodeAnalysisRuleSet property satisfied for StyleCop/older tooling.
+  -->
+  <Rules AnalyzerId="Microsoft.CodeAnalysis.CSharp.NetAnalyzers" RuleNamespace="Microsoft.CodeAnalysis.CSharp.NetAnalyzers">
+    <Rule Id="CA1031" Action="None" />   <!-- allow catching generic exceptions at boundaries -->
+    <Rule Id="CA1303" Action="None" />   <!-- do not require resource strings -->
+    <Rule Id="CA1707" Action="None" />   <!-- allow underscores (tests) -->
+    <Rule Id="CA1848" Action="None" />   <!-- LoggerMessage source generator -->
+  </Rules>
+
+  <Rules AnalyzerId="StyleCop.Analyzers" RuleNamespace="StyleCop.CSharp">
+    <Rule Id="SA1600" Action="None" />   <!-- missing XML doc -->
+    <Rule Id="SA1633" Action="None" />   <!-- file header -->
+    <Rule Id="SA1101" Action="None" />   <!-- prefix with this -->
+  </Rules>
+</RuleSet>
