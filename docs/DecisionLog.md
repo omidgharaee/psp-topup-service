@@ -227,3 +227,44 @@ Model `TopupTransaction` as a rich aggregate root with:
   concurrent writers racing on the same row.
 - 48 domain unit tests pin every transition and invariant; the full happy-path
   produces events in a deterministic order.
+
+---
+
+## ADR-0010 — CQRS with a single-commit transactional pipeline
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+Commands mutate the aggregate AND enqueue outbox messages. If those were
+committed separately (state save, then publish) a crash between them could lose
+the publish intent — leaving the system in a stuck state where the topup exists
+but no one knows about it. Conversely, committing in every handler duplicates
+policy and makes testing harder.
+
+### Decision
+Adopt MediatR CQRS with a five-stage pipeline behaviour registered in a fixed
+order:
+
+1. `UnhandledExceptionBehavior` — outermost safety net; logs unexpected errors
+   with full correlation context.
+2. `LoggingBehavior` — emits Persian structured entry/exit logs with correlation,
+   trace and request ids.
+3. `ValidationBehavior` — runs all FluentValidation validators and throws a
+   typed `ValidationException` aggregating per-field errors.
+4. `PerformanceBehavior` — warns when a request exceeds the SLA threshold.
+5. `TransactionBehavior` — innermost; commits the unit of work after the handler
+   returns, atomically persisting the aggregate state and the outbox message.
+
+Commands never call `SaveChangesAsync` themselves; the behaviour owns the commit
+so the transactional boundary is consistent and easy to test.
+
+### Consequences
+- One commit per command — the aggregate and the outbox message commit together
+  or roll back together. No partial state, no lost events.
+- Handlers stay focused on domain orchestration; cross-cutting concerns live in
+  behaviours.
+- Idempotency is enforced in the handler (key lookup before side effects) so
+  duplicate API requests collapse to a replay result without re-publishing.
+- 18 application unit tests cover the validator, the handler (create / replay /
+  invalid) and the validation behaviour.
