@@ -374,3 +374,41 @@ abstracted so application code never depends on MassTransit types.
   API host stays free of broker concerns.
 - The mapper is the single point where the outbox wire contract meets the
   strongly-typed event contracts; 7 unit tests pin the round-trip.
+
+---
+
+## ADR-0014 — Consume-local idempotency + pessimistic aggregate lock
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+A broker may redeliver a `PaymentCompletedEvent` (consumer crash, network blip),
+and two consumer instances may pick the same message at the same time. The
+business effect of a payment result must occur exactly once.
+
+### Decision
+Two independent idempotency barriers:
+
+1. **Inbox consume-local**: the consumer inserts an `inbox_messages` row keyed
+   by `{consumer}:{messageId}` in the SAME transaction as the business change.
+   The unique index makes a duplicate insert fail with sqlstate 23505, which
+   the store translates to "already processed, skip".
+
+2. **Aggregate state check**: even if the inbox gate is somehow bypassed, the
+   handler verifies the aggregate is still in an awaiting-payment state before
+   applying the transition. A redelivered message finds the aggregate already
+   in a terminal state and returns a no-op replay.
+
+Additionally, the handler loads the aggregate with `SELECT ... FOR UPDATE`
+(`GetByIdForUpdateAsync`) so two concurrent consumers cannot both transition
+the same row at the same time. The pessimistic lock is held until the unit of
+work commits.
+
+### Consequences
+- At-least-once delivery from the broker becomes exactly-once processing.
+- The consumer stays thin — it propagates correlation, runs the inbox gate and
+  dispatches a MediatR command. All business logic lives in the handler, which
+  is unit-tested without a broker.
+- 5 unit tests cover success / failure / timeout classification / replay /
+  not-found paths.

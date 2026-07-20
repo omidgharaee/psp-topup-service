@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PSP.TopupService.Infrastructure.Messaging.Abstractions;
 using PSP.TopupService.Infrastructure.Messaging.Configuration;
+using PSP.TopupService.Infrastructure.Messaging.Consumers;
 using PSP.TopupService.Infrastructure.Messaging.Publishers;
 
 namespace PSP.TopupService.Infrastructure;
@@ -23,7 +24,10 @@ public static class DependencyInjection
         {
             cfg.SetKebabCaseEndpointNameFormatter();
 
-            // Consumers are registered by feature modules (payment-consumer, etc.).
+            // Consumers are registered here. Each consumer type maps to its own
+            // queue (kebab-case-named) so a failing consumer does not block others.
+            cfg.AddConsumer<PaymentCompletedConsumer>();
+
             cfg.UsingRabbitMq((context, bus) =>
             {
                 var options = configuration
@@ -41,6 +45,10 @@ public static class DependencyInjection
                     h.Username(options.Username);
                     h.Password(options.Password);
                 });
+
+                // MassTransit retry for transient broker issues. Business-level
+                // idempotency (inbox) ensures retries never double-execute work.
+                bus.UseMessageRetry(r => r.Intervals(100, 500, 1000));
 
                 bus.ConfigureEndpoints(context);
             });
