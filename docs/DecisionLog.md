@@ -268,3 +268,41 @@ so the transactional boundary is consistent and easy to test.
   duplicate API requests collapse to a replay result without re-publishing.
 - 18 application unit tests cover the validator, the handler (create / replay /
   invalid) and the validation behaviour.
+
+---
+
+## ADR-0011 — PostgreSQL with EF Core and owned-type mapping
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+The aggregate holds value objects (`MobileNumber`, `Money`,
+`TransactionReference`) and child entities (`TopupAttempt`, `ReverseRecord`).
+The schema must reflect the domain shape while staying efficient under load,
+and it must support optimistic concurrency and soft delete.
+
+### Decision
+Use `Npgsql.EntityFrameworkCore.PostgreSQL` with:
+- snake_case naming convention applied at the DbContext options level.
+- Value objects as EF Core **owned types** (complex columns).
+- Child entities (`TopupAttempt`, `ReverseRecord`) as **owned collection /
+  owned single** of the aggregate root, so the aggregate is loaded/saved
+  atomically by the repository.
+- Optimistic concurrency via `IsRowVersion()` on `RowVersion`, mapped to
+  PostgreSQL `xmin` by the Npgsql provider.
+- Soft delete via a global query filter (`IsDeleted = false`).
+- The outbox (`outbox_messages`) and inbox (`inbox_messages`) tables live in
+  the same DbContext so they commit in the same transaction as the business
+  change.
+
+### Consequences
+- One SQL transaction per command persists the aggregate, the outbox message,
+  the inbox de-dup row and the audit log atomically.
+- JSONB columns store the outbox payload and audit snapshots, supporting fast
+  partial indexing and JSON queries.
+- Partial indexes on `outbox_messages(status, occurred_on_utc)` and
+  `inbox_messages(message_id, consumer)` make the publisher polling and consumer
+  de-dup paths index-only scans.
+- An `AuditSaveChangesInterceptor` writes the audit trail inside SaveChanges,
+  so the trail cannot be bypassed by application code.
