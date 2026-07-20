@@ -1,0 +1,151 @@
+using MediatR;
+using Microsoft.Extensions.Logging;
+using PSP.TopupService.Application.Common.Abstractions;
+using PSP.TopupService.Application.Common.Outbox;
+using PSP.TopupService.Application.Topups.Abstractions;
+using PSP.TopupService.Application.Topups.Clients;
+using PSP.TopupService.Domain.Topups;
+using PSP.TopupService.Domain.Topups.Enums;
+using PSP.TopupService.Domain.Topups.ValueObjects;
+
+namespace PSP.TopupService.Application.Topups.Commands.PerformTopup;
+
+/// <summary>
+/// Handles <see cref="PerformTopupCommand"/>: calls the mobile operator (with
+/// Polly-backed resilience inside the client) and, on terminal failure, calls
+/// the Bank to reverse the payment. The whole flow is one atomic unit of work
+/// so we never end up with a charged customer whose topup never happened.
+/// </summary>
+public sealed class PerformTopupCommandHandler : IRequestHandler<PerformTopupCommand, PerformTopupResult>
+{
+    private readonly ITopupRepository _repository;
+    private readonly IHamrahAvalClient _mci;
+    private readonly IBankClient _bank;
+    private readonly IOutboxWriter _outbox;
+    private readonly ILogger<PerformTopupCommandHandler> _logger;
+
+    public PerformTopupCommandHandler(
+        ITopupRepository repository,
+        IHamrahAvalClient mci,
+        IBankClient bank,
+        IOutboxWriter outbox,
+        ILogger<PerformTopupCommandHandler> logger)
+    {
+        _repository = repository;
+        _mci = mci;
+        _bank = bank;
+        _outbox = outbox;
+        _logger = logger;
+    }
+
+    public async Task<PerformTopupResult> Handle(PerformTopupCommand request, CancellationToken cancellationToken)
+    {
+        var topup = await _repository.GetByIdForUpdateAsync(request.TopupId, cancellationToken)
+            ?? throw new SharedKernel.Exceptions.NotFoundException(nameof(TopupTransaction), request.TopupId);
+
+        // Idempotency: if the aggregate has already moved past TopupInProgress
+        // (completed, failed or reversed), this message is a replay.
+        if (topup.Status != TopupStatus.PaymentCompleted && topup.Status != TopupStatus.TopupInProgress)
+        {
+            return PerformTopupResult.Replay(topup.Id, topup.Status.ToString());
+        }
+
+        // 1. Start a fresh topup attempt on the aggregate.
+        var attemptResult = topup.StartTopupAttempt();
+        if (attemptResult.IsFailure)
+        {
+            return PerformTopupResult.Replay(topup.Id, topup.Status.ToString());
+        }
+
+        var attempt = attemptResult.Value!;
+
+        // 2. Call the mobile operator. The client owns the Polly pipeline.
+        HamrahAvalTopupResult? mciResult = null;
+        try
+        {
+            mciResult = await _mci.TopupAsync(topup.Id, topup.MobileNumber, topup.Amount, topup.CorrelationId, cancellationToken);
+        }
+        catch (HamrahAvalException ex)
+        {
+            _logger.LogWarning(ex, "شارژ همراه اول شکست خورد - تراکنش {TopupId}", topup.Id);
+        }
+
+        // 3. Branch on outcome.
+        if (mciResult is not null)
+        {
+            attempt.MarkSucceeded(mciResult.ProviderReference.Value);
+
+            var completion = topup.MarkTopupCompleted(mciResult.ProviderReference, mciResult.CompletedAtUtc);
+            if (completion.IsFailure)
+            {
+                // Very unlikely: aggregate rejected completion despite a successful attempt.
+                _logger.LogError("ناسازگاری: تکمیل تراکنش پس از موفقیت شارژ رد شد - تراکنش {TopupId}", topup.Id);
+                return PerformTopupResult.Replay(topup.Id, topup.Status.ToString());
+            }
+
+            await _outbox.EnqueueTopupCompletedAsync(topup.Id, mciResult.ProviderReference, topup.CorrelationId, cancellationToken);
+            _logger.LogInformation("شارژ انجام شد - تراکنش {TopupId} - مرجع {Reference}", topup.Id, mciResult.ProviderReference);
+
+            return PerformTopupResult.Done(topup.Id, topup.Status.ToString());
+        }
+
+        // ---- Topup failed terminally: reverse the payment. ----
+        attempt.MarkFailed("Polly exhausted or business rejection");
+
+        var failReason = ClassifyTopupFailure();
+        var failureMessage = "تمام تلاش‌های شارژ شکست خورد";
+        var failResult = topup.MarkTopupFailed(failReason, failureMessage);
+        if (failResult.IsFailure)
+        {
+            return PerformTopupResult.Replay(topup.Id, topup.Status.ToString());
+        }
+
+        await ReversePaymentAsync(topup, cancellationToken);
+
+        return PerformTopupResult.Done(topup.Id, topup.Status.ToString());
+    }
+
+    private async Task ReversePaymentAsync(TopupTransaction topup, CancellationToken cancellationToken)
+    {
+        if (topup.BankReference is null)
+        {
+            _logger.LogError("امکان برگشت وجود ندارد: BankReference نال است - تراکنش {TopupId}", topup.Id);
+            return;
+        }
+
+        var reversal = topup.InitiateReversal("reverse-flow");
+        if (reversal.IsFailure)
+        {
+            return;
+        }
+
+        _logger.LogInformation("شروع برگشت وجه برای تراکنش {TopupId}", topup.Id);
+
+        try
+        {
+            var bankResult = await _bank.ReverseAsync(topup.Id, topup.BankReference, topup.Amount, topup.CorrelationId, cancellationToken);
+
+            var markResult = topup.MarkPaymentReversed(bankResult.ReversalReference, bankResult.ReversedAtUtc);
+            if (markResult.IsFailure)
+            {
+                _logger.LogError("عدم توانایی ثبت برگشت در aggregate - تراکنش {TopupId}", topup.Id);
+                return;
+            }
+
+            await _outbox.EnqueuePaymentReversedAsync(
+                topup.Id, bankResult.ReversalReference, topup.FailureReason, topup.CorrelationId, cancellationToken);
+
+            _logger.LogInformation("برگشت وجه انجام شد - تراکنش {TopupId} - مرجع {Reference}", topup.Id, bankResult.ReversalReference);
+        }
+        catch (Exception ex)
+        {
+            // The Bank reversal itself failed — flag for manual intervention.
+            // We DO NOT throw: the terminal Failed state with an initiated reversal
+            // is a known condition the operator can investigate.
+            _logger.LogError(ex, "خطای بحرانی در برگشت وجه - تراکنش {TopupId} - نیاز به بررسی دستی", topup.Id);
+            topup.Reverse!.MarkFailed(ex.Message);
+        }
+    }
+
+    private static TopupFailureReason ClassifyTopupFailure() => TopupFailureReason.TopupProviderError;
+}
