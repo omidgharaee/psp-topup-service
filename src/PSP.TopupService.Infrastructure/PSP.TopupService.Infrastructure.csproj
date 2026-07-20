@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\PSP.TopupService.Application\PSP.TopupService.Application.csproj" />
+    <ProjectReference Include="..\PSP.TopupService.Domain\PSP.TopupService.Domain.csproj" />
+    <ProjectReference Include="..\PSP.TopupService.Contracts\PSP.TopupService.Contracts.csproj" />
+    <ProjectReference Include="..\PSP.TopupService.SharedKernel\PSP.TopupService.SharedKernel.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

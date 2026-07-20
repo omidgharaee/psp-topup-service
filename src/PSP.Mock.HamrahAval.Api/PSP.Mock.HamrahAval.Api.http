@@ -1,0 +1,6 @@
+@PSP.Mock.HamrahAval.Api_HostAddress = http://localhost:5260
+
+GET {{PSP.Mock.HamrahAval.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
