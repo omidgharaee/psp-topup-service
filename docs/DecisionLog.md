@@ -191,3 +191,39 @@ typed-id case. Domain events are dispatched post-persist by an
 - Soft-delete is built-in; Persistence applies a global query filter.
 - `RowVersion` is mapped by EF Core to PostgreSQL `xmin` for optimistic concurrency.
 - 32 unit tests cover the Result, BaseEntity and ValueObject behaviour.
+
+---
+
+## ADR-0009 — Rich domain model with explicit state machine for Topup
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+A topup transaction flows through many asynchronous steps (payment, topup,
+reversal) coordinated over a message broker. If the aggregate allowed ad-hoc
+state mutation, race conditions and duplicate events could push it into an
+invalid state (e.g. "complete" a topup whose payment never settled).
+
+### Decision
+Model `TopupTransaction` as a rich aggregate root with:
+- An explicit `TopupStatus` state machine with guarded transitions. Every state
+  change goes through a behaviour method (`MarkPaymentInitiated`,
+  `MarkPaymentCompleted`, `StartTopupAttempt`, `MarkTopupCompleted`,
+  `MarkTopupFailed`, `InitiateReversal`, `MarkPaymentReversed`).
+- Illegal transitions return a failed `Result` with a stable error code — they
+  never throw and never mutate the aggregate.
+- Each legal transition raises a typed domain event, captured in the aggregate's
+  event collection and dispatched post-persist via the outbox.
+- Child entities (`TopupAttempt`, `ReverseRecord`) are mutated only through the
+  root. Attempts are append-only and numbered for retry tracing.
+- Value objects (`MobileNumber`, `Money`, `TransactionReference`) validate at
+  construction; an aggregate can never hold an invalid value.
+
+### Consequences
+- The aggregate is the single source of truth — duplicate consumer messages
+  become no-ops because the transition is already terminal.
+- Optimistic concurrency (`Version` / EF Core `xmin`) protects against
+  concurrent writers racing on the same row.
+- 48 domain unit tests pin every transition and invariant; the full happy-path
+  produces events in a deterministic order.

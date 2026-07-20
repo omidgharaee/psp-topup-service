@@ -42,10 +42,9 @@ public class ValueObjectTests
     public void Equals_Should_Return_False_When_Comparing_To_Null_Or_Other_Type()
     {
         var a = new Money(100, "IRR");
+        object? nullValue = null;
 
-#pragma warning disable CA1508 // we deliberately pass null to exercise the null branch
-        a.Equals((object?)null).Should().BeFalse();
-#pragma warning restore CA1508
+        a.Equals(nullValue).Should().BeFalse();
         object other = "not a money";
         a.Equals(other).Should().BeFalse();
     }
