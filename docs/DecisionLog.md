@@ -412,3 +412,36 @@ work commits.
   is unit-tested without a broker.
 - 5 unit tests cover success / failure / timeout classification / replay /
   not-found paths.
+
+---
+
+## ADR-0015 — Polly resilience pipeline for the MCI topup provider
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+The Hamrah-e-Aval (MCI) provider is an external HTTP dependency. It may time
+out, return 5xx, or hang. The Topup service must absorb transient failures and
+only escalate to a reversal when the failure is genuinely terminal.
+
+### Decision
+Wrap every operator call in a five-stage Polly pipeline owned by the client:
+1. **Timeout** — each individual attempt is bounded.
+2. **Retry (3)** — exponential backoff on timeouts / 5xx / transient errors.
+3. **Circuit breaker** — opens after N consecutive failures, fast-fails for a
+   cooldown window, then half-opens to probe.
+4. **Fallback** — converts the final failure into a typed
+   `HamrahAvalException` (with the topup id) so the reverse flow can match it.
+5. **PolicyWrap** — composition order: `fallback(circuit(retry(timeout)))`.
+
+The client is registered via `IHttpClientFactory` (typed client) so socket
+exhaustion is handled by the factory's `HttpClientHandler` pool.
+
+### Consequences
+- A short provider blip is invisible to the business — retries absorb it.
+- A sustained outage trips the circuit so we fail fast instead of queuing work.
+- The reverse-payment flow has a clean trigger: any unhandled exception escaping
+  the pipeline is `HamrahAvalException` (terminal, classified).
+- 4 unit tests exercise the pipeline against an in-memory HTTP handler: success,
+  retry-then-success, all-retries-fail, business-rejection.
