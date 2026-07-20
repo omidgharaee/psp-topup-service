@@ -138,3 +138,56 @@ to `develop` via pull-request-style merge commits (`--no-ff`).
 - Hotfixes flow `main → hotfix/* → main & develop`.
 
 See [GitFlow.md](GitFlow.md) for the full workflow and commit conventions.
+
+---
+
+## ADR-0007 — Result pattern over exceptions for business errors
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+In a payment system, most "errors" (invalid amount, bad state, duplicate
+request) are expected, recoverable business outcomes — not exceptional
+conditions. Using exceptions for them obscures the happy path, defeats
+flow-analysis tooling, and makes the API surface harder to reason about.
+
+### Decision
+Business-rule violations return `Result` / `Result<TValue>` from
+`PSP.TopupService.SharedKernel.Results`. Each carries an `Error` value object
+with a stable code, message and `ErrorType` category. Only truly unexpected,
+non-recoverable conditions throw (these flow through the global exception
+middleware). Domain exceptions still exist (`BusinessException`,
+`ConcurrencyException`, `NotFoundException`, `InfrastructureException`) for the
+few cases where a Result cannot be propagated.
+
+### Consequences
+- All command handlers in Application return `Result<T>`.
+- The API layer maps `ErrorType` to HTTP status (Validation→400, Conflict→409,
+  NotFound→404, Unauthorized→401, Forbidden→403, Unavailable→503, Failure→500).
+- Result is immutable; chaining helpers (`Map`, `Bind`, `Ensure`) keep handlers
+  declarative.
+
+---
+
+## ADR-0008 — Aggregate root + domain-event base class
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+The domain needs a consistent way to model identity, audit fields, soft delete,
+optimistic concurrency and domain-event raising on every aggregate.
+
+### Decision
+`BaseEntity` (SharedKernel) provides `Id`, `CreatedOnUtc`, `ModifiedOnUtc`,
+`CreatedBy/ModifiedBy`, `IsDeleted/DeletedOnUtc`, `RowVersion`, and an
+internal domain-event collection. `AggregateRoot<TId>` derives from it for the
+typed-id case. Domain events are dispatched post-persist by an
+`IDomainEventDispatcher` whose implementation lives in Infrastructure.
+
+### Consequences
+- Aggregates are loaded/saved by their root; children are never persisted directly.
+- Soft-delete is built-in; Persistence applies a global query filter.
+- `RowVersion` is mapped by EF Core to PostgreSQL `xmin` for optimistic concurrency.
+- 32 unit tests cover the Result, BaseEntity and ValueObject behaviour.
