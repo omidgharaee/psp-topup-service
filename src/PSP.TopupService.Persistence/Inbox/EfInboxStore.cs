@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PSP.TopupService.Application.Common.Inbox;
 using PSP.TopupService.Persistence.Context;
 
 namespace PSP.TopupService.Persistence.Inbox;

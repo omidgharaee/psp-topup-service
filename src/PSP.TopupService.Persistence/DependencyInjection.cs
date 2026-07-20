@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PSP.TopupService.Application.Common.Abstractions;
+using PSP.TopupService.Application.Common.Inbox;
 using PSP.TopupService.Application.Common.Outbox;
 using PSP.TopupService.Persistence.Context;
 using PSP.TopupService.Persistence.Inbox;

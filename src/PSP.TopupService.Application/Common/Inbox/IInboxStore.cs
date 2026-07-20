@@ -1,6 +1,4 @@
-using PSP.TopupService.Persistence.Inbox;
-
-namespace PSP.TopupService.Persistence;
+namespace PSP.TopupService.Application.Common.Inbox;
 
 /// <summary>
 /// Idempotent consume-local pattern. Before processing a message, the consumer
