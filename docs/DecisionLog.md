@@ -480,3 +480,44 @@ the command with the inbox consume-local idempotency gate.
 - Hard bank outages surface as a Failed reversal record — visible, not lost.
 - 5 unit tests cover topup success, MCI failure -> reversal, bank reverse
   failure -> manual intervention, terminal replay, and missing aggregate.
+
+---
+
+## ADR-0017 — Bank Advice as a two-phase finalization with Saga retry
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+The customer must only see a successful topup once the Bank has finalized
+(advised) the payment. The Bank Advice call can fail transiently; we cannot
+block the topup flow on it, but we also cannot leave the customer charged
+without a finalization. A naive "complete on MCI success" is unsafe; an
+auto-reversal on advice failure is wrong because the customer has been topped
+up — reversing would steal the credit.
+
+### Decision
+Introduce a two-phase finalization:
+1. After MCI success the aggregate moves to `AdvicePending` (NOT Completed).
+2. The handler enqueues an `AdviceRequestedEvent` in the same unit of work.
+3. The advice consumer calls the Bank Advice endpoint via `IBankAdviceClient`
+   (its own Polly pipeline: timeout + retry).
+4. On success the aggregate moves to terminal `Completed` and the
+   `TopupCompleted` event is published.
+5. On failure the handler re-enqueues the advice via the outbox with a
+   scheduled `processAfterUtc` (exponential backoff). The publisher's
+   `locked_until_utc > now` clause skips not-yet-due retries.
+6. After `MaxRetries` attempts the aggregate is flagged `AdviceFailed` for
+   manual reconciliation — NEVER auto-reversed.
+
+### Consequences
+- A topup never reaches terminal `Completed` until the Bank confirms the
+  advice.
+- Transient advice failures self-heal via outbox-scheduled retries; no operator
+  intervention needed.
+- Hard Bank outages surface as `AdviceFailed` rows that operators investigate;
+  the customer keeps their topup credit.
+- The Saga's state is durable (in the aggregate + outbox) so a worker crash
+  mid-retry is invisible — the next scheduled attempt resumes.
+- 9 unit tests cover the advice flow (success, retry schedule, terminal
+  failure-no-reversal, replay, not-found, plus 4 aggregate-level transitions).

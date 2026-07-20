@@ -13,8 +13,9 @@ namespace PSP.TopupService.UnitTests.Application.Topups.PerformTopup;
 
 /// <summary>
 /// Verifies <see cref="PerformTopupCommandHandler"/>: topup success path
-/// (MarkTopupCompleted + outbox), topup failure path (reverse payment, terminal
-/// Reversed state), idempotency replay when the aggregate has already moved on.
+/// (MarkTopupSucceeded -> AdvicePending + outbox Advice), topup failure path
+/// (reverse payment, terminal Reversed state), idempotency replay when the
+/// aggregate has already moved on.
 /// </summary>
 [Trait("Category", "Unit")]
 [Trait("Layer", "Application")]
@@ -26,7 +27,7 @@ public class PerformTopupCommandHandlerTests
     private readonly Mock<IOutboxWriter> _outbox = new();
 
     [Fact]
-    public async Task Handle_MciSuccess_Should_Complete_Topup_And_Enqueue_Completed()
+    public async Task Handle_MciSuccess_Should_Move_To_AdvicePending_And_Enqueue_Advice()
     {
         var tx = PaidTransaction();
         var mciRef = TransactionReference.Create("MCI-OK", "MCI");
@@ -38,11 +39,12 @@ public class PerformTopupCommandHandlerTests
         var result = await handler.Handle(Command(tx.Id), CancellationToken.None);
 
         result.WasIdempotentReplay.Should().BeFalse();
-        result.FinalStatus.Should().Be(nameof(TopupStatus.Completed));
-        tx.Status.Should().Be(TopupStatus.Completed);
+        result.FinalStatus.Should().Be(nameof(TopupStatus.AdvicePending));
+        tx.Status.Should().Be(TopupStatus.AdvicePending);
         tx.MciReference.Should().Be(mciRef);
-        _outbox.Verify(o => o.EnqueueTopupCompletedAsync(tx.Id, mciRef, tx.CorrelationId, It.IsAny<CancellationToken>()), Times.Once);
-        _outbox.Verify(o => o.EnqueuePaymentReversedAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<TopupFailureReason>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        tx.IsTerminal.Should().BeFalse();
+        _outbox.Verify(o => o.EnqueueAdviceRequestedAsync(tx.Id, tx.BankReference!, tx.Amount, tx.CorrelationId, It.IsAny<DateTime?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        _outbox.Verify(o => o.EnqueueTopupCompletedAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _bank.Verify(b => b.ReverseAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<Money>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -132,7 +134,8 @@ public class PerformTopupCommandHandlerTests
         var tx = PaidTransaction();
         var attempt = tx.StartTopupAttempt().Value!;
         attempt.MarkSucceeded("MCI-OK");
-        tx.MarkTopupCompleted(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+        tx.MarkTopupSucceeded(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+        tx.MarkAdviceCompleted(TransactionReference.Create("ADV-1", "ADVICE"), DateTime.UtcNow);
         return tx;
     }
 }

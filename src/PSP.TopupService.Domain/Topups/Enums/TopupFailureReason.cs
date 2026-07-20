@@ -26,4 +26,11 @@ public enum TopupFailureReason
 
     /// <summary>The transaction was reversed by an operator or an upstream reversal event.</summary>
     Reversed = 6,
+
+    /// <summary>
+    /// The Bank Advice (finalization) failed terminally after all retries. The
+    /// transaction is stuck in AdvicePending and requires manual reconciliation
+    /// — it is NOT auto-reversed because the topup succeeded.
+    /// </summary>
+    AdviceFailed = 7,
 }

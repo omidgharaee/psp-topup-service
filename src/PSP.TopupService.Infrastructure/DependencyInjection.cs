@@ -28,6 +28,7 @@ public static class DependencyInjection
             // queue (kebab-case-named) so a failing consumer does not block others.
             cfg.AddConsumer<PaymentCompletedConsumer>();
             cfg.AddConsumer<PaymentRequestedConsumer>();
+            cfg.AddConsumer<AdviceRequestedConsumer>();
 
             cfg.UsingRabbitMq((context, bus) =>
             {

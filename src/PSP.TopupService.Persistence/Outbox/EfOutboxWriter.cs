@@ -41,13 +41,26 @@ public sealed class EfOutboxWriter : IOutboxWriter
         return AddAsync(OutboxRoutes.TopupEventsExchange, payload, correlationId, cancellationToken);
     }
 
+    public Task EnqueueAdviceRequestedAsync(
+        Guid topupId,
+        TransactionReference originalPaymentReference,
+        Money amount,
+        Guid correlationId,
+        DateTime? processAfterUtc,
+        int adviceAttempt,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = _serializer.SerializeAdviceRequested(topupId, originalPaymentReference, amount, correlationId, adviceAttempt);
+        return AddAsync(OutboxRoutes.AdviceRequestedRoutingKey, payload, correlationId, cancellationToken, processAfterUtc);
+    }
+
     public Task EnqueuePaymentReversedAsync(Guid topupId, TransactionReference reversalReference, TopupFailureReason reason, Guid correlationId, CancellationToken cancellationToken = default)
     {
         var payload = _serializer.SerializePaymentReversed(topupId, reversalReference, reason, correlationId);
         return AddAsync(OutboxRoutes.TopupEventsExchange, payload, correlationId, cancellationToken);
     }
 
-    private async Task AddAsync(string routingKey, string payload, Guid correlationId, CancellationToken cancellationToken)
+    private async Task AddAsync(string routingKey, string payload, Guid correlationId, CancellationToken cancellationToken, DateTime? processAfterUtc = null)
     {
         var message = new OutboxMessage
         {
@@ -57,6 +70,7 @@ public sealed class EfOutboxWriter : IOutboxWriter
             RoutingKey = routingKey,
             Status = OutboxMessageStatus.Pending,
             OccurredOnUtc = DateTime.UtcNow,
+            LockedUntilUtc = processAfterUtc,
         };
         await _context.OutboxMessages.AddAsync(message, cancellationToken);
     }
@@ -82,4 +96,5 @@ public static class OutboxRoutes
 {
     public const string TopupEventsExchange = "topup.events";
     public const string PaymentRequestedRoutingKey = "payment.requests";
+    public const string AdviceRequestedRoutingKey = "advice.requests";
 }

@@ -122,3 +122,34 @@ public sealed record PaymentReversedEvent : IIntegrationEvent
     public int Version { get; init; } = 1;
     public string EventType => nameof(PaymentReversedEvent);
 }
+
+/// <summary>
+/// Published to request that the Bank finalize (advice) the payment for a
+/// topup whose MCI step has succeeded. Consumed by the advice worker which
+/// retries via outbox scheduling until success or terminal failure.
+/// </summary>
+public sealed record AdviceRequestedEvent : IIntegrationEvent
+{
+    public AdviceRequestedEvent(Guid topupId, string originalReference, string originalSource, decimal amount, string currency, int adviceAttempt, Guid correlationId, DateTime occurredOnUtc)
+    {
+        TopupId = topupId;
+        OriginalReference = originalReference;
+        OriginalSource = originalSource;
+        Amount = amount;
+        Currency = currency;
+        AdviceAttempt = adviceAttempt;
+        CorrelationId = correlationId;
+        OccurredOnUtc = occurredOnUtc;
+    }
+
+    public Guid TopupId { get; init; }
+    public string OriginalReference { get; init; }
+    public string OriginalSource { get; init; }
+    public decimal Amount { get; init; }
+    public string Currency { get; init; }
+    public int AdviceAttempt { get; init; }
+    public Guid CorrelationId { get; init; }
+    public DateTime OccurredOnUtc { get; init; }
+    public int Version { get; init; } = 1;
+    public string EventType => nameof(AdviceRequestedEvent);
+}

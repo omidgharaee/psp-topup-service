@@ -212,10 +212,13 @@ public sealed class TopupTransaction : AggregateRoot<Guid>
     }
 
     /// <summary>
-    /// Marks the topup as completed successfully and records the operator reference.
+    /// Marks the mobile topup as successful and records the operator reference.
+    /// Does NOT complete the transaction: it moves to <see cref="TopupStatus.AdvicePending"/>,
+    /// awaiting the Bank Advice (finalization) call. The transaction only
+    /// becomes <see cref="TopupStatus.Completed"/> once the advice succeeds.
     /// Allowed from <see cref="TopupStatus.TopupInProgress"/> only.
     /// </summary>
-    public Result MarkTopupCompleted(TransactionReference mciReference, DateTime completedAtUtc)
+    public Result MarkTopupSucceeded(TransactionReference mciReference, DateTime succeededAtUtc)
     {
         ArgumentNullException.ThrowIfNull(mciReference);
 
@@ -223,22 +226,76 @@ public sealed class TopupTransaction : AggregateRoot<Guid>
         {
             return Result.Failure(Error.Conflict(
                 "Topup.NotInProgress",
-                $"Topup completion requires TopupInProgress state (current: {Status})."));
+                $"Topup success requires TopupInProgress state (current: {Status})."));
         }
 
         if (_attempts.Count == 0 || _attempts.All(a => a.Status != TopupAttemptStatus.Succeeded))
         {
             return Result.Failure(Error.Failure(
                 "Topup.NoSuccessfulAttempt",
-                "Cannot complete topup: no successful attempt has been recorded."));
+                "Cannot mark topup succeeded: no successful attempt has been recorded."));
         }
 
         MciReference = mciReference;
-        CompletedAtUtc = completedAtUtc;
-        TransitionTo(TopupStatus.Completed);
-        RaiseEvent(new TopupCompletedEvent(Id, mciReference, completedAtUtc, CorrelationId));
+        TransitionTo(TopupStatus.AdvicePending);
+        RaiseEvent(new TopupCompletedEvent(Id, mciReference, succeededAtUtc, CorrelationId));
         return Result.Success();
     }
+
+    /// <summary>
+    /// Records that the Bank Advice (finalization) succeeded. Transitions the
+    /// aggregate to its terminal <see cref="TopupStatus.Completed"/> state.
+    /// Allowed from <see cref="TopupStatus.AdvicePending"/> only.
+    /// </summary>
+    public Result MarkAdviceCompleted(TransactionReference adviceReference, DateTime completedAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(adviceReference);
+
+        if (Status != TopupStatus.AdvicePending)
+        {
+            return Result.Failure(Error.Conflict(
+                "Topup.NotAwaitingAdvice",
+                $"Advice completion requires AdvicePending state (current: {Status})."));
+        }
+
+        BankReference = adviceReference;
+        CompletedAtUtc = completedAtUtc;
+        AdviceRetryCount = 0;
+        TransitionTo(TopupStatus.Completed);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Records a failed advice attempt and schedules the next retry (or flags
+    /// terminal advice failure when <paramref name="maxRetries"/> is reached).
+    /// Allowed from <see cref="TopupStatus.AdvicePending"/> only.
+    /// </summary>
+    public Result MarkAdviceAttemptFailed(string message, int maxRetries)
+    {
+        if (Status != TopupStatus.AdvicePending)
+        {
+            return Result.Failure(Error.Conflict(
+                "Topup.NotAwaitingAdvice",
+                $"Advice failure requires AdvicePending state (current: {Status})."));
+        }
+
+        AdviceRetryCount++;
+        AdviceLastError = message;
+
+        if (AdviceRetryCount >= maxRetries)
+        {
+            FailureReason = TopupFailureReason.AdviceFailed;
+            FailureMessage = $"Bank advice failed terminally after {AdviceRetryCount} attempts: {message}";
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>Number of advice attempts recorded so far.</summary>
+    public int AdviceRetryCount { get; private set; }
+
+    /// <summary>Last error message captured during an advice attempt.</summary>
+    public string? AdviceLastError { get; private set; }
 
     /// <summary>
     /// Marks the topup as terminally failed after all retries were exhausted.

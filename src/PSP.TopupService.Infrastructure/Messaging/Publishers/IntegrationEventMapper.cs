@@ -35,6 +35,7 @@ public sealed class IntegrationEventMapper : IIntegrationEventMapper
                 nameof(PaymentRequestedEvent) or "PaymentRequested" => BuildPaymentRequested(payloadElement, correlationId, occurredOnUtc),
                 nameof(TopupCompletedEvent) or "TopupCompleted" => BuildTopupCompleted(payloadElement, correlationId, occurredOnUtc),
                 nameof(PaymentReversedEvent) or "PaymentReversed" => BuildPaymentReversed(payloadElement, correlationId, occurredOnUtc),
+                nameof(AdviceRequestedEvent) or "AdviceRequested" => BuildAdviceRequested(payloadElement, correlationId, occurredOnUtc),
                 _ => null,
             };
         }
@@ -82,6 +83,17 @@ public sealed class IntegrationEventMapper : IIntegrationEventMapper
             correlationId: correlationId,
             occurredOnUtc: occurredOnUtc);
 
+    private static AdviceRequestedEvent BuildAdviceRequested(JsonElement p, Guid correlationId, DateTime occurredOnUtc) =>
+        new(
+            topupId: TryGetGuid(p, "topupId") ?? Guid.Empty,
+            originalReference: TryGetString(p, "originalReference") ?? string.Empty,
+            originalSource: TryGetString(p, "originalSource") ?? string.Empty,
+            amount: TryGetDecimal(p, "amount") ?? 0m,
+            currency: TryGetString(p, "currency") ?? "IRR",
+            adviceAttempt: TryGetInt(p, "adviceAttempt") ?? 0,
+            correlationId: correlationId,
+            occurredOnUtc: occurredOnUtc);
+
     private static Guid? TryGetGuid(JsonElement element, string propertyName)
     {
         if (element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String)
@@ -103,6 +115,13 @@ public sealed class IntegrationEventMapper : IIntegrationEventMapper
     {
         return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Number
             ? value.GetDecimal()
+            : null;
+    }
+
+    private static int? TryGetInt(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetInt32()
             : null;
     }
 

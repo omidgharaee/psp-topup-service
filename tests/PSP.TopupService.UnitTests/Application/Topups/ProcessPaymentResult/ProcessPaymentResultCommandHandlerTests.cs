@@ -124,7 +124,8 @@ public class ProcessPaymentResultCommandHandlerTests
         tx.MarkPaymentCompleted(tx.BankReference!, DateTime.UtcNow);
         tx.StartTopupAttempt();
         tx.Attempts.First().MarkSucceeded("MCI-OK");
-        tx.MarkTopupCompleted(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+        tx.MarkTopupSucceeded(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+        tx.MarkAdviceCompleted(TransactionReference.Create("ADV-1", "ADVICE"), DateTime.UtcNow);
         return tx;
     }
 
