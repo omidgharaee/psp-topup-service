@@ -176,33 +176,92 @@ public class TopupTransactionTests
     }
 
     [Fact]
-    public void MarkTopupCompleted_Should_Reach_Completed_After_Successful_Attempt()
+    public void MarkTopupSucceeded_Should_Reach_AdvicePending_After_Successful_Attempt()
     {
         var tx = PaidTransaction();
         var attemptResult = tx.StartTopupAttempt();
         attemptResult.Value!.MarkSucceeded("MCI-REF-123");
         var mciRef = TransactionReference.Create("MCI-REF-123", "MCI");
 
-        var result = tx.MarkTopupCompleted(mciRef, DateTime.UtcNow);
+        var result = tx.MarkTopupSucceeded(mciRef, DateTime.UtcNow);
 
         result.IsSuccess.Should().BeTrue();
-        tx.Status.Should().Be(TopupStatus.Completed);
+        tx.Status.Should().Be(TopupStatus.AdvicePending);
         tx.MciReference.Should().Be(mciRef);
-        tx.IsTerminal.Should().BeTrue();
-        tx.DomainEvents.OfType<TopupCompletedEvent>().Should().ContainSingle();
+        tx.IsTerminal.Should().BeFalse();
     }
 
     [Fact]
-    public void MarkTopupCompleted_Should_Fail_When_No_Successful_Attempt()
+    public void MarkTopupSucceeded_Should_Fail_When_No_Successful_Attempt()
     {
         var tx = PaidTransaction();
         tx.StartTopupAttempt();
         var mciRef = TransactionReference.Create("MCI-REF-123", "MCI");
 
-        var result = tx.MarkTopupCompleted(mciRef, DateTime.UtcNow);
+        var result = tx.MarkTopupSucceeded(mciRef, DateTime.UtcNow);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Topup.NoSuccessfulAttempt");
+    }
+
+    [Fact]
+    public void MarkAdviceCompleted_Should_Reach_Terminal_Completed_From_AdvicePending()
+    {
+        var tx = PaidTransaction();
+        var attempt = tx.StartTopupAttempt().Value!;
+        attempt.MarkSucceeded("MCI-OK");
+        tx.MarkTopupSucceeded(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+        var adviceRef = TransactionReference.Create("ADV-1", "ADVICE");
+
+        var result = tx.MarkAdviceCompleted(adviceRef, DateTime.UtcNow);
+
+        result.IsSuccess.Should().BeTrue();
+        tx.Status.Should().Be(TopupStatus.Completed);
+        tx.IsTerminal.Should().BeTrue();
+        tx.BankReference.Should().Be(adviceRef);
+    }
+
+    [Fact]
+    public void MarkAdviceCompleted_Should_Fail_When_Not_In_AdvicePending()
+    {
+        var tx = PaidTransaction();
+        var adviceRef = TransactionReference.Create("ADV-1", "ADVICE");
+
+        var result = tx.MarkAdviceCompleted(adviceRef, DateTime.UtcNow);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Topup.NotAwaitingAdvice");
+    }
+
+    [Fact]
+    public void MarkAdviceAttemptFailed_Should_Flag_Terminal_When_Max_Retries_Reached()
+    {
+        var tx = PaidTransaction();
+        var attempt = tx.StartTopupAttempt().Value!;
+        attempt.MarkSucceeded("MCI-OK");
+        tx.MarkTopupSucceeded(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+
+        var result = tx.MarkAdviceAttemptFailed("bank down", maxRetries: 1);
+
+        result.IsSuccess.Should().BeTrue();
+        tx.AdviceRetryCount.Should().Be(1);
+        tx.FailureReason.Should().Be(TopupFailureReason.AdviceFailed);
+        tx.FailureMessage.Should().Contain("Bank advice failed terminally");
+    }
+
+    [Fact]
+    public void MarkAdviceAttemptFailed_Should_Not_Flag_Terminal_Below_Max_Retries()
+    {
+        var tx = PaidTransaction();
+        var attempt = tx.StartTopupAttempt().Value!;
+        attempt.MarkSucceeded("MCI-OK");
+        tx.MarkTopupSucceeded(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+
+        var result = tx.MarkAdviceAttemptFailed("bank down", maxRetries: 5);
+
+        result.IsSuccess.Should().BeTrue();
+        tx.AdviceRetryCount.Should().Be(1);
+        tx.FailureReason.Should().Be(TopupFailureReason.None);
     }
 
     [Fact]
@@ -291,7 +350,8 @@ public class TopupTransactionTests
         tx.MarkPaymentCompleted(tx.BankReference!, DateTime.UtcNow);
         var attempt = tx.StartTopupAttempt().Value!;
         attempt.MarkSucceeded("MCI-OK");
-        tx.MarkTopupCompleted(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+        tx.MarkTopupSucceeded(TransactionReference.Create("MCI-OK", "MCI"), DateTime.UtcNow);
+        tx.MarkAdviceCompleted(TransactionReference.Create("ADV-1", "ADVICE"), DateTime.UtcNow);
 
         var eventTypes = tx.DomainEvents.Select(e => e.GetType()).ToArray();
         eventTypes.Should().Equal(

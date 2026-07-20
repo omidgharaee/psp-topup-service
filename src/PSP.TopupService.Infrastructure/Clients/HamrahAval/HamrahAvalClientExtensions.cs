@@ -46,6 +46,7 @@ public static class HamrahAvalClientExtensions
         });
 
         services.AddHttpClient<IBankClient, BankClient>();
+        services.AddHttpClient<IBankAdviceClient, BankAdviceClient>();
         return services;
     }
 }

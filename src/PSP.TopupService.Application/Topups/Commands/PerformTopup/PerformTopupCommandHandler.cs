@@ -75,16 +75,23 @@ public sealed class PerformTopupCommandHandler : IRequestHandler<PerformTopupCom
         {
             attempt.MarkSucceeded(mciResult.ProviderReference.Value);
 
-            var completion = topup.MarkTopupCompleted(mciResult.ProviderReference, mciResult.CompletedAtUtc);
-            if (completion.IsFailure)
+            // MCI success moves the aggregate to AdvicePending — the topup is
+            // done but the transaction is NOT terminal until the Bank Advice
+            // (finalization) succeeds. We enqueue an AdviceRequested event so
+            // the advice consumer attempts the Bank call with retry semantics.
+            var success = topup.MarkTopupSucceeded(mciResult.ProviderReference, mciResult.CompletedAtUtc);
+            if (success.IsFailure)
             {
-                // Very unlikely: aggregate rejected completion despite a successful attempt.
-                _logger.LogError("ناسازگاری: تکمیل تراکنش پس از موفقیت شارژ رد شد - تراکنش {TopupId}", topup.Id);
+                _logger.LogError("ناسازگاری: ثبت موفقیت شارژ رد شد - تراکنش {TopupId}", topup.Id);
                 return PerformTopupResult.Replay(topup.Id, topup.Status.ToString());
             }
 
-            await _outbox.EnqueueTopupCompletedAsync(topup.Id, mciResult.ProviderReference, topup.CorrelationId, cancellationToken);
-            _logger.LogInformation("شارژ انجام شد - تراکنش {TopupId} - مرجع {Reference}", topup.Id, mciResult.ProviderReference);
+            await _outbox.EnqueueAdviceRequestedAsync(
+                topup.Id, topup.BankReference!, topup.Amount, topup.CorrelationId, processAfterUtc: null, adviceAttempt: 0, cancellationToken);
+
+            _logger.LogInformation(
+                "شارژ انجام شد - تراکنش {TopupId} - در انتظار تأیید بانک (Advice)",
+                topup.Id);
 
             return PerformTopupResult.Done(topup.Id, topup.Status.ToString());
         }

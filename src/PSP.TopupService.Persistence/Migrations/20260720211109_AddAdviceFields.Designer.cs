@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PSP.TopupService.Persistence.Context;
@@ -11,9 +12,11 @@ using PSP.TopupService.Persistence.Context;
 namespace PSP.TopupService.Persistence.Migrations
 {
     [DbContext(typeof(TopupDbContext))]
-    partial class TopupDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260720211109_AddAdviceFields")]
+    partial class AddAdviceFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

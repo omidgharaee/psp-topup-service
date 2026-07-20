@@ -34,6 +34,21 @@ public interface IOutboxWriter
         Guid correlationId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Enqueues the <c>AdviceRequested</c> event that triggers the Bank Advice
+    /// (finalization) call. The first enqueue is immediate; subsequent retries
+    /// are scheduled with a non-null <paramref name="processAfterUtc"/> so the
+    /// outbox publisher only re-publishes them after the delay elapses.
+    /// </summary>
+    Task EnqueueAdviceRequestedAsync(
+        Guid topupId,
+        TransactionReference originalPaymentReference,
+        Money amount,
+        Guid correlationId,
+        DateTime? processAfterUtc,
+        int adviceAttempt,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Enqueues the <c>PaymentReversed</c> terminal failure event.</summary>
     Task EnqueuePaymentReversedAsync(
         Guid topupId,

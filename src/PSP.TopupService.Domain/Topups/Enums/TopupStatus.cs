@@ -31,19 +31,26 @@ public enum TopupStatus
     TopupInProgress = 4,
 
     /// <summary>
-    /// The mobile operator confirmed the topup. Terminal success state.
+    /// The mobile operator confirmed the topup, but the Bank Advice
+    /// (finalization) call has not yet succeeded. The transaction can only
+    /// reach <see cref="Completed"/> once the Bank acknowledges the advice.
     /// </summary>
-    Completed = 5,
+    AdvicePending = 5,
+
+    /// <summary>
+    /// The Bank Advice succeeded. Terminal success state.
+    /// </summary>
+    Completed = 6,
 
     /// <summary>
     /// A non-recoverable failure occurred and (if applicable) the payment was
     /// reversed. Terminal failure state.
     /// </summary>
-    Failed = 6,
+    Failed = 7,
 
     /// <summary>
     /// The payment was reversed (refund completed) after an unrecoverable topup
     /// failure. Terminal failure state with explicit reversal.
     /// </summary>
-    Reversed = 7,
+    Reversed = 8,
 }
