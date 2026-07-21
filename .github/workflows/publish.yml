@@ -72,15 +72,6 @@ jobs:
           --output ./artifacts/api
           -p:VersionPrefix=${{ steps.ver.outputs.version }}
 
-      - name: Publish Worker
-        run: >
-          dotnet publish
-          src/PSP.TopupService.Worker/PSP.TopupService.Worker.csproj
-          --configuration Release
-          --no-build
-          --output ./artifacts/worker
-          -p:VersionPrefix=${{ steps.ver.outputs.version }}
-
       - name: Publish Mock.Payment
         run: >
           dotnet publish
@@ -103,7 +94,6 @@ jobs:
         run: |
           mkdir -p dist
           tar -czf dist/topup-api-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/api .
-          tar -czf dist/topup-worker-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/worker .
           tar -czf dist/mock-payment-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/mock-payment .
           tar -czf dist/mock-hamrahaval-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/mock-hamrahaval .
 

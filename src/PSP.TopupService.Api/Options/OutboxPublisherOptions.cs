@@ -1,4 +1,4 @@
-namespace PSP.TopupService.Worker.Options;
+namespace PSP.TopupService.Api.Options;
 
 /// <summary>Tuning parameters for the outbox publisher background service.</summary>
 public sealed class OutboxPublisherOptions

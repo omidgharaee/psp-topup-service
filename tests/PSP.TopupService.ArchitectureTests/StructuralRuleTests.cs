@@ -89,7 +89,7 @@ public static class StructuralRuleTests
             typeof(DependencyInjection).Assembly,
             typeof(PSP.TopupService.Infrastructure.DependencyInjection).Assembly,
             typeof(TopupDbContext).Assembly,
-            typeof(PSP.TopupService.Worker.Options.OutboxPublisherOptions).Assembly,
+            typeof(PSP.TopupService.Api.Options.OutboxPublisherOptions).Assembly,
         };
 
         foreach (var assembly in allAssemblies)

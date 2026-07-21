@@ -2,7 +2,7 @@ using FluentAssertions;
 using NetArchTest.Rules;
 using PSP.TopupService.Application;
 using PSP.TopupService.Persistence.Context;
-using PSP.TopupService.Worker.Options;
+using PSP.TopupService.Api.Options;
 
 namespace PSP.TopupService.ArchitectureTests;
 
@@ -25,13 +25,12 @@ public static class DependencyRuleTests
     private const string Infrastructure = "Infrastructure";
     private const string Persistence = "Persistence";
     private const string Api = "Api";
-    private const string Worker = "Worker";
 
     [Fact]
     public static void SharedKernel_Should_Not_Reference_Other_Projects()
     {
         var offenders = Types.InAssembly(typeof(PSP.TopupService.SharedKernel.Results.Result).Assembly)
-            .That().HaveDependencyOnAny(Domain, Contracts, Application, Infrastructure, Persistence, Api, Worker)
+            .That().HaveDependencyOnAny(Domain, Contracts, Application, Infrastructure, Persistence, Api)
             .GetTypes();
 
         offenders.Should().BeEmpty("SharedKernel must be dependency-free");
@@ -41,7 +40,7 @@ public static class DependencyRuleTests
     public static void Domain_Should_Reference_Only_SharedKernel()
     {
         var offenders = Types.InAssembly(typeof(PSP.TopupService.Domain.Topups.TopupTransaction).Assembly)
-            .That().HaveDependencyOnAny(Contracts, Application, Infrastructure, Persistence, Api, Worker)
+            .That().HaveDependencyOnAny(Contracts, Application, Infrastructure, Persistence, Api)
             .GetTypes();
 
         offenders.Should().BeEmpty("Domain may only depend on SharedKernel");
@@ -51,7 +50,7 @@ public static class DependencyRuleTests
     public static void Contracts_Should_Not_Reference_Internal_Projects()
     {
         var offenders = Types.InAssembly(typeof(PSP.TopupService.Contracts.IIntegrationEvent).Assembly)
-            .That().HaveDependencyOnAny(SharedKernel, Domain, Application, Infrastructure, Persistence, Api, Worker)
+            .That().HaveDependencyOnAny(SharedKernel, Domain, Application, Infrastructure, Persistence, Api)
             .GetTypes();
 
         offenders.Should().BeEmpty("Contracts must be self-contained");
@@ -61,49 +60,31 @@ public static class DependencyRuleTests
     public static void Application_Should_Reference_Only_Domain_And_SharedKernel()
     {
         var offenders = Types.InAssembly(typeof(DependencyInjection).Assembly)
-            .That().HaveDependencyOnAny(Contracts, Infrastructure, Persistence, Api, Worker)
+            .That().HaveDependencyOnAny(Contracts, Infrastructure, Persistence, Api)
             .GetTypes();
 
         offenders.Should().BeEmpty("Application may only depend on Domain and SharedKernel");
     }
 
     [Fact]
-    public static void Infrastructure_Should_Not_Reference_Persistence_Api_Or_Worker()
+    public static void Infrastructure_Should_Not_Reference_Persistence_Or_Api()
     {
         var offenders = Types.InAssembly(typeof(PSP.TopupService.Infrastructure.DependencyInjection).Assembly)
-            .That().HaveDependencyOnAny(Persistence, Api, Worker)
+            .That().HaveDependencyOnAny(Persistence, Api)
             .GetTypes();
 
-        offenders.Should().BeEmpty("Infrastructure may not depend on Persistence, Api or Worker");
+        offenders.Should().BeEmpty("Infrastructure may not depend on Persistence or Api");
     }
 
     [Fact]
-    public static void Persistence_Should_Not_Reference_Infrastructure_Api_Or_Worker()
+    public static void Persistence_Should_Not_Reference_Infrastructure_Or_Api()
     {
         var offenders = Types.InAssembly(typeof(TopupDbContext).Assembly)
-            .That().HaveDependencyOnAny(Contracts, Infrastructure, Api, Worker)
+            .That().HaveDependencyOnAny(Contracts, Infrastructure, Api)
             .GetTypes();
 
-        offenders.Should().BeEmpty("Persistence may not depend on Infrastructure, Api or Worker");
+        offenders.Should().BeEmpty("Persistence may not depend on Infrastructure or Api");
     }
 
-    [Fact]
-    public static void Api_Should_Not_Reference_Worker()
-    {
-        var offenders = Types.InAssembly(System.Reflection.Assembly.Load("PSP.TopupService.Api"))
-            .That().HaveDependencyOn(Worker)
-            .GetTypes();
 
-        offenders.Should().BeEmpty("Api must not reference Worker");
-    }
-
-    [Fact]
-    public static void Worker_Should_Not_Reference_Api()
-    {
-        var offenders = Types.InAssembly(typeof(OutboxPublisherOptions).Assembly)
-            .That().HaveDependencyOn(Api)
-            .GetTypes();
-
-        offenders.Should().BeEmpty("Worker must not reference Api");
-    }
 }

@@ -16,7 +16,7 @@ Clean Architecture with strict, machine-checked dependency rules:
 
 ```
 Domain ← SharedKernel
-Domain ← Application ← { Infrastructure, Persistence } ← { Api, Worker }
+Domain ← Application ← { Infrastructure, Persistence } ← Api
 Contracts (no internal deps; shared with mocks)
 ```
 
@@ -25,7 +25,7 @@ Contracts (no internal deps; shared with mocks)
 - **Application** — CQRS handlers, validators, pipeline behaviours, abstractions.
 - **Infrastructure** — MassTransit, MCI HTTP client (Polly), integration-event mapper.
 - **Persistence** — EF Core + PostgreSQL, repositories, outbox / inbox state.
-- **Api** / **Worker** — thin hosts.
+- **Api** — thin host, including background services (outbox).
 - **Contracts** — integration events shared with the mock services.
 
 See [docs/Architecture.md](docs/Architecture.md) and
@@ -53,14 +53,13 @@ See [docs/Architecture.md](docs/Architecture.md) and
 ```
 PSP.TopupService.sln
 src/
-├── PSP.TopupService.Api            # public HTTP API
+├── PSP.TopupService.Api            # public HTTP API, outbox publisher + consumers
 ├── PSP.TopupService.Application    # CQRS, handlers, behaviours
 ├── PSP.TopupService.Domain         # Topup aggregate, value objects
 ├── PSP.TopupService.Infrastructure # MassTransit, MCI client, Polly
 ├── PSP.TopupService.Persistence    # EF Core, repositories, outbox/inbox
 ├── PSP.TopupService.Contracts      # integration events
 ├── PSP.TopupService.SharedKernel   # Result, BaseEntity, ValueObject
-├── PSP.TopupService.Worker         # outbox publisher + consumers
 ├── PSP.Mock.Payment.Api            # Payment-service simulator (RabbitMQ)
 └── PSP.Mock.HamrahAval.Api         # MCI simulator (HTTP)
 tests/
@@ -94,13 +93,12 @@ Start PostgreSQL and RabbitMQ (any method — `docker run`, a local install, or
 the orchestrator of your choice). The default connection strings point at
 `localhost:5432` and `localhost:5672`.
 
-### 3. Run the four services
+### 3. Run the three services
 
-In four terminals (or via your IDE's multi-launch):
+In three terminals (or via your IDE's multi-launch):
 
 ```bash
-dotnet run --project src/PSP.TopupService.Api           # https://localhost:5001
-dotnet run --project src/PSP.TopupService.Worker        # outbox drain + consumers
+dotnet run --project src/PSP.TopupService.Api           # https://localhost:5001 + background services
 dotnet run --project src/PSP.Mock.Payment.Api           # Payment simulator
 dotnet run --project src/PSP.Mock.HamrahAval.Api        # MCI simulator
 ```
@@ -120,10 +118,10 @@ Swagger UI is available at `https://localhost:5001/swagger` in Development.
 
 1. **Client** → `POST /api/v1/topups` → aggregate created in `Pending`,
    `TopupCreated` enqueued.
-2. **Outbox worker** publishes the event; the Payment consumer advances the
+2. **Outbox background service (in API)** publishes the event; the Payment consumer advances the
    aggregate to `PaymentCompleted` and publishes `PaymentRequested`.
 3. **Payment service** processes the payment and publishes `PaymentCompleted`.
-4. **Topup worker** consumes it, calls MCI (`/topup`) with Polly:
+4. **API** consumes it, calls MCI (`/topup`) with Polly:
    - **Success** → aggregate to `AdvicePending`, publishes `AdviceRequested`.
      The Payment service finalises the payment (`AdviceCompleted`), the
      aggregate reaches terminal **`Completed`** and publishes `TopupCompleted`.
