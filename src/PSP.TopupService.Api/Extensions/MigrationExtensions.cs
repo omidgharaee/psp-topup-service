@@ -9,7 +9,6 @@ public static class MigrationExtensions
     {
         using var scope = app.Services.CreateAsyncScope();
         var services = scope.ServiceProvider;
-
         try
         {
             var context = services.GetRequiredService<TopupDbContext>();
