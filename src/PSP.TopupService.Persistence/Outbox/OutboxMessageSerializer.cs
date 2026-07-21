@@ -49,6 +49,12 @@ public sealed class OutboxMessageSerializer
             new PaymentReversedPayload(topupId, reversalReference.Value, reversalReference.Source, reason.ToString()),
             correlationId));
 
+    public string SerializeReverseRequested(Guid topupId, TransactionReference originalPaymentReference, Money amount, string reason, Guid correlationId) =>
+        Serialize(new IntegrationEnvelope(
+            "ReverseRequested",
+            new ReverseRequestedPayload(topupId, originalPaymentReference.Value, originalPaymentReference.Source, amount.Value, amount.Currency, reason),
+            correlationId));
+
     private static string Serialize(IntegrationEnvelope envelope) =>
         JsonSerializer.Serialize(envelope, Options);
 }
@@ -89,3 +95,5 @@ internal sealed record TopupCompletedPayload(Guid TopupId, string MciReference, 
 internal sealed record PaymentReversedPayload(Guid TopupId, string ReversalReference, string ReversalSource, string Reason);
 
 internal sealed record AdviceRequestedPayload(Guid TopupId, string OriginalReference, string OriginalSource, decimal Amount, string Currency, int AdviceAttempt);
+
+internal sealed record ReverseRequestedPayload(Guid TopupId, string OriginalReference, string OriginalSource, decimal Amount, string Currency, string Reason);

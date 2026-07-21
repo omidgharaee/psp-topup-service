@@ -153,3 +153,57 @@ public sealed record AdviceRequestedEvent : IIntegrationEvent
     public int Version { get; init; } = 1;
     public string EventType => nameof(AdviceRequestedEvent);
 }
+
+/// <summary>
+/// Published by the Bank mock when the Advice (finalization) succeeds. Consumed
+/// by the Topup service to advance the aggregate to terminal Completed.
+/// </summary>
+public sealed record AdviceCompletedEvent : IIntegrationEvent
+{
+    public AdviceCompletedEvent(Guid topupId, string adviceReference, string adviceSource, Guid correlationId, DateTime occurredOnUtc)
+    {
+        TopupId = topupId;
+        AdviceReference = adviceReference;
+        AdviceSource = adviceSource;
+        CorrelationId = correlationId;
+        OccurredOnUtc = occurredOnUtc;
+    }
+
+    public Guid TopupId { get; init; }
+    public string AdviceReference { get; init; }
+    public string AdviceSource { get; init; }
+    public Guid CorrelationId { get; init; }
+    public DateTime OccurredOnUtc { get; init; }
+    public int Version { get; init; } = 1;
+    public string EventType => nameof(AdviceCompletedEvent);
+}
+
+/// <summary>
+/// Published by the Topup service to request that the Bank reverse a payment
+/// after a terminal topup failure. Consumed by the Bank mock.
+/// </summary>
+public sealed record ReverseRequestedEvent : IIntegrationEvent
+{
+    public ReverseRequestedEvent(Guid topupId, string originalReference, string originalSource, decimal amount, string currency, string reason, Guid correlationId, DateTime occurredOnUtc)
+    {
+        TopupId = topupId;
+        OriginalReference = originalReference;
+        OriginalSource = originalSource;
+        Amount = amount;
+        Currency = currency;
+        Reason = reason;
+        CorrelationId = correlationId;
+        OccurredOnUtc = occurredOnUtc;
+    }
+
+    public Guid TopupId { get; init; }
+    public string OriginalReference { get; init; }
+    public string OriginalSource { get; init; }
+    public decimal Amount { get; init; }
+    public string Currency { get; init; }
+    public string Reason { get; init; }
+    public Guid CorrelationId { get; init; }
+    public DateTime OccurredOnUtc { get; init; }
+    public int Version { get; init; } = 1;
+    public string EventType => nameof(ReverseRequestedEvent);
+}

@@ -29,6 +29,8 @@ public static class DependencyInjection
             cfg.AddConsumer<PaymentCompletedConsumer>();
             cfg.AddConsumer<PaymentRequestedConsumer>();
             cfg.AddConsumer<AdviceRequestedConsumer>();
+            cfg.AddConsumer<AdviceCompletedConsumer>();
+            cfg.AddConsumer<PaymentReversedConsumer>();
 
             cfg.UsingRabbitMq((context, bus) =>
             {

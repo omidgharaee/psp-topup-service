@@ -56,4 +56,17 @@ public interface IOutboxWriter
         TopupFailureReason reason,
         Guid correlationId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enqueues the <c>ReverseRequested</c> event that asks the Payment service
+    /// to reverse a settled payment after a terminal topup failure. The Payment
+    /// service responds asynchronously with <c>PaymentReversedEvent</c>.
+    /// </summary>
+    Task EnqueueReverseRequestedAsync(
+        Guid topupId,
+        TransactionReference originalPaymentReference,
+        Money amount,
+        string reason,
+        Guid correlationId,
+        CancellationToken cancellationToken = default);
 }

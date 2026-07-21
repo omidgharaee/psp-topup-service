@@ -1,39 +1,38 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using PSP.TopupService.Application.Common.Abstractions;
 using PSP.TopupService.Application.Common.Outbox;
-using PSP.TopupService.Application.Topups.Abstractions;
 using PSP.TopupService.Domain.Topups;
-using PSP.TopupService.Domain.Topups.Enums;
-using PSP.TopupService.Domain.Topups.ValueObjects;
 
 namespace PSP.TopupService.Application.Topups.Commands.PerformAdvice;
 
 /// <summary>
-/// Handles <see cref="PerformAdviceCommand"/>: calls the Bank Advice endpoint
-/// and either completes the transaction or schedules a retry. The transaction
-/// NEVER auto-reverses on advice failure — the customer has been topped up, so
-/// a reversal would steal the credit. Terminal advice failure flags the
-/// transaction for manual reconciliation.
+/// Handles <see cref="PerformAdviceCommand"/>: dispatches an AdviceRequested
+/// integration event to the Bank (Payment Application) via the outbox. The Bank
+/// responds asynchronously with AdviceCompletedEvent, which a separate consumer
+/// applies to the aggregate. This handler does NOT call the Bank directly —
+/// all bank communication is via RabbitMQ so the Topup service never takes a
+/// synchronous dependency on the Payment Application.
+///
+/// Retries are scheduled via the outbox: each retry re-enqueues an
+/// AdviceRequestedEvent with an incremented attempt index and a processAfterUtc
+/// delay. After MaxRetries the aggregate is flagged AdviceFailed for manual
+/// reconciliation — NEVER auto-reversed (the customer has been topped up).
 /// </summary>
 public sealed class PerformAdviceCommandHandler : IRequestHandler<PerformAdviceCommand, PerformAdviceResult>
 {
     private readonly ITopupRepository _repository;
-    private readonly IBankAdviceClient _bank;
     private readonly IOutboxWriter _outbox;
     private readonly AdviceOptions _options;
     private readonly ILogger<PerformAdviceCommandHandler> _logger;
 
     public PerformAdviceCommandHandler(
         ITopupRepository repository,
-        IBankAdviceClient bank,
         IOutboxWriter outbox,
-        IOptions<AdviceOptions> options,
+        Microsoft.Extensions.Options.IOptions<AdviceOptions> options,
         ILogger<PerformAdviceCommandHandler> logger)
     {
         _repository = repository;
-        _bank = bank;
         _outbox = outbox;
         _options = options.Value;
         _logger = logger;
@@ -44,9 +43,8 @@ public sealed class PerformAdviceCommandHandler : IRequestHandler<PerformAdviceC
         var topup = await _repository.GetByIdForUpdateAsync(request.TopupId, cancellationToken)
             ?? throw new SharedKernel.Exceptions.NotFoundException(nameof(TopupTransaction), request.TopupId);
 
-        // Idempotency: if the aggregate has already moved past AdvicePending
-        // (Completed or AdviceFailed), this message is a replay.
-        if (topup.Status != TopupStatus.AdvicePending)
+        // Idempotency: only act when the aggregate is awaiting advice.
+        if (topup.Status != Domain.Topups.Enums.TopupStatus.AdvicePending)
         {
             return PerformAdviceResult.Replay(topup.Id, topup.Status.ToString());
         }
@@ -57,56 +55,35 @@ public sealed class PerformAdviceCommandHandler : IRequestHandler<PerformAdviceC
             return PerformAdviceResult.Replay(topup.Id, topup.Status.ToString());
         }
 
-        try
+        // Record the attempt on the aggregate (flags AdviceFailed at MaxRetries).
+        var failResult = topup.MarkAdviceAttemptFailed("Advice dispatched; awaiting bank response", _options.MaxRetries);
+        if (failResult.IsFailure)
         {
-            var advice = await _bank.AdviceAsync(topup.Id, topup.BankReference, topup.Amount, topup.CorrelationId, cancellationToken);
+            return PerformAdviceResult.Replay(topup.Id, topup.Status.ToString());
+        }
 
-            var completed = topup.MarkAdviceCompleted(advice.AdviceReference, advice.CompletedAtUtc);
-            if (completed.IsFailure)
-            {
-                return PerformAdviceResult.Replay(topup.Id, topup.Status.ToString());
-            }
-
-            // The topup is now genuinely terminal-successful.
-            await _outbox.EnqueueTopupCompletedAsync(topup.Id, topup.MciReference!, topup.CorrelationId, cancellationToken);
-
-            _logger.LogInformation("تأیید بانک (Advice) موفق بود - تراکنش {TopupId} تکمیل شد", topup.Id);
+        if (topup.FailureReason == Domain.Topups.Enums.TopupFailureReason.AdviceFailed)
+        {
+            _logger.LogError("Advice پس از {Attempts} تلاش شکست خورد - تراکنش {TopupId} نیاز به بررسی دستی دارد", _options.MaxRetries, topup.Id);
             return PerformAdviceResult.Done(topup.Id, topup.Status.ToString());
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "تلاش Advice بانک شکست خورد (شماره {Attempt}) - تراکنش {TopupId}", request.AdviceAttempt + 1, topup.Id);
 
-            var failResult = topup.MarkAdviceAttemptFailed(ex.Message, _options.MaxRetries);
-            if (failResult.IsFailure)
-            {
-                return PerformAdviceResult.Replay(topup.Id, topup.Status.ToString());
-            }
+        // Dispatch the advice request to the Bank via RabbitMQ. The Bank will
+        // respond with AdviceCompletedEvent (consumed by AdviceCompletedConsumer).
+        await _outbox.EnqueueAdviceRequestedAsync(
+            topup.Id,
+            topup.BankReference,
+            topup.Amount,
+            topup.CorrelationId,
+            processAfterUtc: null,
+            adviceAttempt: request.AdviceAttempt,
+            cancellationToken);
 
-            if (topup.FailureReason == TopupFailureReason.AdviceFailed)
-            {
-                // Terminal advice failure — DO NOT reverse (the topup succeeded).
-                // Surface for manual reconciliation.
-                _logger.LogError("Advice پس از {Attempts} تلاش شکست خورد - تراکنش {TopupId} نیاز به بررسی دستی دارد", _options.MaxRetries, topup.Id);
-                return PerformAdviceResult.Done(topup.Id, topup.Status.ToString());
-            }
+        _logger.LogInformation(
+            "درخواست Advice برای تراکنش {TopupId} به بانک ارسال شد (تلاش {Attempt})",
+            topup.Id,
+            request.AdviceAttempt + 1);
 
-            // Schedule the next advice attempt via the outbox with exponential back-off.
-            var nextAttempt = request.AdviceAttempt + 1;
-            var delay = TimeSpan.FromTicks((long)(_options.RetryDelay.Ticks * Math.Pow(_options.BackoffMultiplier, request.AdviceAttempt)));
-            var processAfter = DateTime.UtcNow.Add(delay);
-
-            await _outbox.EnqueueAdviceRequestedAsync(
-                topup.Id,
-                topup.BankReference,
-                topup.Amount,
-                topup.CorrelationId,
-                processAfterUtc: processAfter,
-                adviceAttempt: nextAttempt,
-                cancellationToken);
-
-            _logger.LogInformation("زمان‌بندی تلاش مجدد Advice برای تراکنش {TopupId} پس از {DelaySeconds}s", topup.Id, delay.TotalSeconds);
-            return PerformAdviceResult.Done(topup.Id, topup.Status.ToString());
-        }
+        return PerformAdviceResult.Done(topup.Id, topup.Status.ToString());
     }
 }

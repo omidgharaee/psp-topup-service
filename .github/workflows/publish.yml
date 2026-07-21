@@ -81,13 +81,13 @@ jobs:
           --output ./artifacts/worker
           -p:VersionPrefix=${{ steps.ver.outputs.version }}
 
-      - name: Publish Mock.Bank
+      - name: Publish Mock.Payment
         run: >
           dotnet publish
-          src/PSP.Mock.Bank.Api/PSP.Mock.Bank.Api.csproj
+          src/PSP.Mock.Payment.Api/PSP.Mock.Payment.Api.csproj
           --configuration Release
           --no-build
-          --output ./artifacts/mock-bank
+          --output ./artifacts/mock-payment
           -p:VersionPrefix=${{ steps.ver.outputs.version }}
 
       - name: Publish Mock.HamrahAval
@@ -104,7 +104,7 @@ jobs:
           mkdir -p dist
           tar -czf dist/topup-api-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/api .
           tar -czf dist/topup-worker-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/worker .
-          tar -czf dist/mock-bank-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/mock-bank .
+          tar -czf dist/mock-payment-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/mock-payment .
           tar -czf dist/mock-hamrahaval-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/mock-hamrahaval .
 
       - name: Create GitHub Release

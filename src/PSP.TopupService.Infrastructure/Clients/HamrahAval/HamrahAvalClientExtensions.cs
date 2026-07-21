@@ -1,15 +1,15 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PSP.TopupService.Application.Topups.Abstractions;
-using PSP.TopupService.Infrastructure.Clients.Bank;
 using PSP.TopupService.Infrastructure.Clients.Configuration;
 using PSP.TopupService.Infrastructure.Clients.HamrahAval;
 
 namespace PSP.TopupService.Infrastructure.Clients;
 
 /// <summary>
-/// DI extensions for the external HTTP clients. Each client owns its own
-/// <c>HttpClient</c> (via IHttpClientFactory) and its own typed options.
+/// DI extensions for external HTTP clients. Only Hamrah-e-Aval (MCI) is
+/// HTTP-driven; the Payment application is reached exclusively via RabbitMQ,
+/// so no Payment HTTP client is registered here.
 /// </summary>
 public static class HamrahAvalClientExtensions
 {
@@ -31,22 +31,6 @@ public static class HamrahAvalClientExtensions
         });
 
         services.AddHttpClient<IHamrahAvalClient, HamrahAvalClient>();
-        return services;
-    }
-
-    /// <summary>Registers the Bank client with its own Polly pipeline.</summary>
-    public static IServiceCollection AddBankClient(this IServiceCollection services, IConfiguration configuration)
-    {
-        services.Configure<BankOptions>(configuration.GetSection(BankOptions.SectionName));
-        services.AddSingleton<BankOptions>(sp =>
-        {
-            var opts = new BankOptions();
-            configuration.GetSection(BankOptions.SectionName).Bind(opts);
-            return opts;
-        });
-
-        services.AddHttpClient<IBankClient, BankClient>();
-        services.AddHttpClient<IBankAdviceClient, BankAdviceClient>();
         return services;
     }
 }

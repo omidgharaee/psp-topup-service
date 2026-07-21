@@ -596,3 +596,56 @@ it does not carry correlation ids, is not structured, and has no async sink.
   stop routing traffic before customers are affected.
 - 4 unit tests cover the correlation middleware (echo, generate, malformed,
   next-call).
+
+---
+
+## ADR-0020 — Payment service communication is RabbitMQ-only
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+The Topup service and the Payment service (the upstream that holds the bank
+connection and performs payment finalisation) are separate deployments. Earlier
+iterations introduced `IBankClient` / `IBankAdviceClient` HTTP clients in the
+Topup service to call the Payment service synchronously. That coupling is wrong:
+
+- A Topup-service outage of the HTTP path leaks into the Payment service.
+- Synchronous retries (Polly inside `BankClient`) and outbox retries overlap,
+  doubling work and confusing the failure model.
+- The Payment service is mockable as a MassTransit consumer — there is no need
+  for the Topup service to know its HTTP shape at all.
+
+### Decision
+All Payment-service communication is via RabbitMQ. The Topup service:
+- publishes `PaymentRequestedEvent`, `AdviceRequestedEvent`,
+  `ReverseRequestedEvent` via the outbox;
+- consumes `PaymentCompletedEvent`, `AdviceCompletedEvent`,
+  `PaymentReversedEvent` via MassTransit consumers.
+
+The HTTP clients `IBankClient`, `IBankAdviceClient`, `BankClient`,
+`BankAdviceClient`, `BankOptions` are deleted. The `AddBankClient` extension is
+removed; the only HTTP client remaining is Hamrah-e-Aval (MCI), which keeps the
+Polly pipeline per ADR-0015.
+
+Two new MediatR commands own the asynchronous responses:
+- `ApplyAdviceResultCommand` (consumed by `AdviceCompletedConsumer`) — the only
+  path to terminal `Completed`.
+- `ApplyReversalResultCommand` (consumed by `PaymentReversedConsumer`) — completes
+  the reversal saga and publishes the public `PaymentReversed` event.
+
+The `PSP.Mock.Bank.Api` simulator is renamed to `PSP.Mock.Payment.Api` and is a
+pure MassTransit service: it consumes the three request events and publishes the
+three response events with configurable failure rates and delays for chaos
+testing.
+
+### Consequences
+- The Topup service has zero HTTP knowledge of the Payment service. Operators
+  can move the Payment service to a different runtime without touching Topup.
+- The reverse and advice flows are uniformly asynchronous — the aggregate stays
+  in `TopupInProgress` (reversal) or `AdvicePending` (advice) until the response
+  event arrives. If the Payment service is down the row is visible for manual
+  reconciliation; nothing is silently lost.
+- The MCI HTTP client with Polly (ADR-0015) is preserved unchanged.
+- 11 new/updated unit tests cover the event-driven advice and reversal paths
+  and the new apply-result handlers.
