@@ -92,6 +92,8 @@ try
     app.MapControllers();
     app.MapTopupHealthEndpoints();
 
+    await app.ApplyMigrationsAsync();
+
     app.Run();
 }
 catch (Exception ex)
