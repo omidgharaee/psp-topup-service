@@ -29,7 +29,6 @@
     <ProjectReference Include="..\..\src\PSP.TopupService.Infrastructure\PSP.TopupService.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\PSP.TopupService.Persistence\PSP.TopupService.Persistence.csproj" />
     <ProjectReference Include="..\..\src\PSP.TopupService.Api\PSP.TopupService.Api.csproj" />
-    <ProjectReference Include="..\..\src\PSP.TopupService.Worker\PSP.TopupService.Worker.csproj" />
   </ItemGroup>
 
 </Project>

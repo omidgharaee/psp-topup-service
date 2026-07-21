@@ -3,14 +3,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PSP.TopupService.Api.Options;
 using PSP.TopupService.Application.Common.Context;
 using PSP.TopupService.Contracts;
 using PSP.TopupService.Infrastructure.Messaging.Abstractions;
 using PSP.TopupService.Persistence.Context;
 using PSP.TopupService.Persistence.Outbox;
-using PSP.TopupService.Worker.Options;
 
-namespace PSP.TopupService.Worker.Outbox;
+namespace PSP.TopupService.Api.BackgroundServices;
 
 /// <summary>
 /// Background service that drains the transactional outbox. On every cycle it

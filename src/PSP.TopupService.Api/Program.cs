@@ -1,14 +1,16 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Models;
+using PSP.TopupService.Api.BackgroundServices;
 using PSP.TopupService.Api.Extensions;
 using PSP.TopupService.Api.Middleware;
+using PSP.TopupService.Api.Options;
 using PSP.TopupService.Application;
+using PSP.TopupService.Application.Topups.Commands.PerformAdvice;
 using PSP.TopupService.Infrastructure;
 using PSP.TopupService.Infrastructure.Clients;
 using PSP.TopupService.Persistence;
 using Serilog;
-
 // ----- Serilog bootstrap -----
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(new ConfigurationBuilder().AddJsonFile("appsettings.json", optional: false).Build())
@@ -29,6 +31,11 @@ try
     builder.Services.AddPersistence(builder.Configuration);
     builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddHamrahAvalClient(builder.Configuration);
+
+    // ----- Background Services -----
+    builder.Services.Configure<OutboxPublisherOptions>(builder.Configuration.GetSection(OutboxPublisherOptions.SectionName));
+    builder.Services.Configure<AdviceOptions>(builder.Configuration.GetSection(AdviceOptions.SectionName));
+    builder.Services.AddHostedService<OutboxPublisherWorker>();
 
     // ----- API versioning -----
     builder.Services.AddApiVersioning(options =>
