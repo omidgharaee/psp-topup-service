@@ -6,34 +6,36 @@ using PSP.TopupService.Application.Topups.Abstractions;
 using PSP.TopupService.Application.Topups.Clients;
 using PSP.TopupService.Domain.Topups;
 using PSP.TopupService.Domain.Topups.Enums;
-using PSP.TopupService.Domain.Topups.ValueObjects;
 
 namespace PSP.TopupService.Application.Topups.Commands.PerformTopup;
 
 /// <summary>
 /// Handles <see cref="PerformTopupCommand"/>: calls the mobile operator (with
-/// Polly-backed resilience inside the client) and, on terminal failure, calls
-/// the Bank to reverse the payment. The whole flow is one atomic unit of work
-/// so we never end up with a charged customer whose topup never happened.
+/// Polly-backed resilience inside the client) and dispatches the next step via
+/// the outbox. The Topup service NEVER talks to the Payment application over
+/// HTTP — every Payment interaction (initial payment, advice, reversal) flows
+/// through RabbitMQ.
+///
+/// - MCI success -> aggregate to AdvicePending + enqueue AdviceRequestedEvent.
+/// - MCI terminal failure -> MarkTopupFailed + InitiateReversal + enqueue
+///   ReverseRequestedEvent. The aggregate stays in TopupInProgress awaiting
+///   the asynchronous PaymentReversedEvent that completes the reversal.
 /// </summary>
 public sealed class PerformTopupCommandHandler : IRequestHandler<PerformTopupCommand, PerformTopupResult>
 {
     private readonly ITopupRepository _repository;
     private readonly IHamrahAvalClient _mci;
-    private readonly IBankClient _bank;
     private readonly IOutboxWriter _outbox;
     private readonly ILogger<PerformTopupCommandHandler> _logger;
 
     public PerformTopupCommandHandler(
         ITopupRepository repository,
         IHamrahAvalClient mci,
-        IBankClient bank,
         IOutboxWriter outbox,
         ILogger<PerformTopupCommandHandler> logger)
     {
         _repository = repository;
         _mci = mci;
-        _bank = bank;
         _outbox = outbox;
         _logger = logger;
     }
@@ -76,9 +78,9 @@ public sealed class PerformTopupCommandHandler : IRequestHandler<PerformTopupCom
             attempt.MarkSucceeded(mciResult.ProviderReference.Value);
 
             // MCI success moves the aggregate to AdvicePending — the topup is
-            // done but the transaction is NOT terminal until the Bank Advice
-            // (finalization) succeeds. We enqueue an AdviceRequested event so
-            // the advice consumer attempts the Bank call with retry semantics.
+            // done but the transaction is NOT terminal until the Payment service
+            // confirms the advice. We enqueue AdviceRequestedEvent (via outbox)
+            // and the Payment app responds asynchronously with AdviceCompletedEvent.
             var success = topup.MarkTopupSucceeded(mciResult.ProviderReference, mciResult.CompletedAtUtc);
             if (success.IsFailure)
             {
@@ -90,13 +92,13 @@ public sealed class PerformTopupCommandHandler : IRequestHandler<PerformTopupCom
                 topup.Id, topup.BankReference!, topup.Amount, topup.CorrelationId, processAfterUtc: null, adviceAttempt: 0, cancellationToken);
 
             _logger.LogInformation(
-                "شارژ انجام شد - تراکنش {TopupId} - در انتظار تأیید بانک (Advice)",
+                "شارژ انجام شد - تراکنش {TopupId} - در انتظار تأیید سرویس Payment (Advice)",
                 topup.Id);
 
             return PerformTopupResult.Done(topup.Id, topup.Status.ToString());
         }
 
-        // ---- Topup failed terminally: reverse the payment. ----
+        // ---- Topup failed terminally: request a reversal from the Payment service. ----
         attempt.MarkFailed("Polly exhausted or business rejection");
 
         var failReason = ClassifyTopupFailure();
@@ -107,16 +109,24 @@ public sealed class PerformTopupCommandHandler : IRequestHandler<PerformTopupCom
             return PerformTopupResult.Replay(topup.Id, topup.Status.ToString());
         }
 
-        await ReversePaymentAsync(topup, cancellationToken);
+        await RequestReversalAsync(topup, cancellationToken);
 
         return PerformTopupResult.Done(topup.Id, topup.Status.ToString());
     }
 
-    private async Task ReversePaymentAsync(TopupTransaction topup, CancellationToken cancellationToken)
+    /// <summary>
+    /// Records the reversal intent on the aggregate and enqueues a
+    /// ReverseRequestedEvent. The aggregate stays in TopupInProgress with a
+    /// ReverseRecord in Initiated state until the asynchronous
+    /// PaymentReversedEvent arrives and the PaymentReversedConsumer completes
+    /// the reversal. If the Payment service is unavailable the row stays in
+    /// Initiated for manual reconciliation (it is NOT auto-reversed).
+    /// </summary>
+    private async Task RequestReversalAsync(TopupTransaction topup, CancellationToken cancellationToken)
     {
         if (topup.BankReference is null)
         {
-            _logger.LogError("امکان برگشت وجود ندارد: BankReference نال است - تراکنش {TopupId}", topup.Id);
+            _logger.LogError("امکان برگشت وجود ندارد: مرجع پرداخت نال است - تراکنش {TopupId}", topup.Id);
             return;
         }
 
@@ -126,32 +136,17 @@ public sealed class PerformTopupCommandHandler : IRequestHandler<PerformTopupCom
             return;
         }
 
-        _logger.LogInformation("شروع برگشت وجه برای تراکنش {TopupId}", topup.Id);
+        await _outbox.EnqueueReverseRequestedAsync(
+            topup.Id,
+            topup.BankReference,
+            topup.Amount,
+            topup.FailureReason.ToString(),
+            topup.CorrelationId,
+            cancellationToken);
 
-        try
-        {
-            var bankResult = await _bank.ReverseAsync(topup.Id, topup.BankReference, topup.Amount, topup.CorrelationId, cancellationToken);
-
-            var markResult = topup.MarkPaymentReversed(bankResult.ReversalReference, bankResult.ReversedAtUtc);
-            if (markResult.IsFailure)
-            {
-                _logger.LogError("عدم توانایی ثبت برگشت در aggregate - تراکنش {TopupId}", topup.Id);
-                return;
-            }
-
-            await _outbox.EnqueuePaymentReversedAsync(
-                topup.Id, bankResult.ReversalReference, topup.FailureReason, topup.CorrelationId, cancellationToken);
-
-            _logger.LogInformation("برگشت وجه انجام شد - تراکنش {TopupId} - مرجع {Reference}", topup.Id, bankResult.ReversalReference);
-        }
-        catch (Exception ex)
-        {
-            // The Bank reversal itself failed — flag for manual intervention.
-            // We DO NOT throw: the terminal Failed state with an initiated reversal
-            // is a known condition the operator can investigate.
-            _logger.LogError(ex, "خطای بحرانی در برگشت وجه - تراکنش {TopupId} - نیاز به بررسی دستی", topup.Id);
-            topup.Reverse!.MarkFailed(ex.Message);
-        }
+        _logger.LogInformation(
+            "درخواست برگشت وجه برای تراکنش {TopupId} به سرویس Payment ارسال شد",
+            topup.Id);
     }
 
     private static TopupFailureReason ClassifyTopupFailure() => TopupFailureReason.TopupProviderError;

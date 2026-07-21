@@ -28,7 +28,6 @@ try
     builder.Services.AddApplication();
     builder.Services.AddPersistence(builder.Configuration);
     builder.Services.AddInfrastructure(builder.Configuration);
-    builder.Services.AddBankClient(builder.Configuration);
     builder.Services.AddHamrahAvalClient(builder.Configuration);
 
     // ----- API versioning -----

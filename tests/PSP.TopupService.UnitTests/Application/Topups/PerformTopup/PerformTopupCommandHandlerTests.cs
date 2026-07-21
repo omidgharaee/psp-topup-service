@@ -12,10 +12,9 @@ using PSP.TopupService.SharedKernel.Exceptions;
 namespace PSP.TopupService.UnitTests.Application.Topups.PerformTopup;
 
 /// <summary>
-/// Verifies <see cref="PerformTopupCommandHandler"/>: topup success path
-/// (MarkTopupSucceeded -> AdvicePending + outbox Advice), topup failure path
-/// (reverse payment, terminal Reversed state), idempotency replay when the
-/// aggregate has already moved on.
+/// Verifies <see cref="PerformTopupCommandHandler"/> under the event-driven
+/// flow: MCI success -> AdvicePending + outbox AdviceRequested, MCI failure ->
+/// ReverseRecord initiated + outbox ReverseRequested. No direct Bank HTTP call.
 /// </summary>
 [Trait("Category", "Unit")]
 [Trait("Layer", "Application")]
@@ -23,7 +22,6 @@ public class PerformTopupCommandHandlerTests
 {
     private readonly Mock<ITopupRepository> _repository = new();
     private readonly Mock<IHamrahAvalClient> _mci = new();
-    private readonly Mock<IBankClient> _bank = new();
     private readonly Mock<IOutboxWriter> _outbox = new();
 
     [Fact]
@@ -44,50 +42,30 @@ public class PerformTopupCommandHandlerTests
         tx.MciReference.Should().Be(mciRef);
         tx.IsTerminal.Should().BeFalse();
         _outbox.Verify(o => o.EnqueueAdviceRequestedAsync(tx.Id, tx.BankReference!, tx.Amount, tx.CorrelationId, It.IsAny<DateTime?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
-        _outbox.Verify(o => o.EnqueueTopupCompletedAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
-        _bank.Verify(b => b.ReverseAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<Money>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _outbox.Verify(o => o.EnqueueReverseRequestedAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<Money>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task Handle_MciFailure_Should_Reverse_Payment_And_Reach_Reversed()
+    public async Task Handle_MciFailure_Should_Initiate_Reversal_And_Enqueue_ReverseRequested()
     {
         var tx = PaidTransaction();
-        var reversalRef = TransactionReference.Generate("REVERSAL");
         _repository.Setup(r => r.GetByIdForUpdateAsync(tx.Id, It.IsAny<CancellationToken>())).ReturnsAsync(tx);
         _mci.Setup(c => c.TopupAsync(tx.Id, tx.MobileNumber, tx.Amount, tx.CorrelationId, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new PSP.TopupService.Application.Topups.Clients.HamrahAvalException(tx.Id, "all retries failed"));
-        _bank.Setup(b => b.ReverseAsync(tx.Id, tx.BankReference!, tx.Amount, tx.CorrelationId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new BankReversalResult { ReversalReference = reversalRef });
 
         var handler = BuildHandler();
         var result = await handler.Handle(Command(tx.Id), CancellationToken.None);
 
-        result.FinalStatus.Should().Be(nameof(TopupStatus.Reversed));
-        tx.Status.Should().Be(TopupStatus.Reversed);
+        // The aggregate stays in TopupInProgress with an Initiated reversal
+        // awaiting the asynchronous PaymentReversedEvent from the Payment service.
+        result.FinalStatus.Should().Be(nameof(TopupStatus.TopupInProgress));
+        tx.Status.Should().Be(TopupStatus.TopupInProgress);
         tx.FailureReason.Should().Be(TopupFailureReason.TopupProviderError);
         tx.Reverse.Should().NotBeNull();
-        tx.Reverse!.Status.Should().Be(ReverseStatus.Completed);
-        _bank.Verify(b => b.ReverseAsync(tx.Id, tx.BankReference!, tx.Amount, tx.CorrelationId, It.IsAny<CancellationToken>()), Times.Once);
-        _outbox.Verify(o => o.EnqueuePaymentReversedAsync(tx.Id, reversalRef, tx.FailureReason, tx.CorrelationId, It.IsAny<CancellationToken>()), Times.Once);
-        _outbox.Verify(o => o.EnqueueTopupCompletedAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task Handle_BankReverseFailure_Should_Mark_Reversal_Failed_But_Not_Throw()
-    {
-        var tx = PaidTransaction();
-        _repository.Setup(r => r.GetByIdForUpdateAsync(tx.Id, It.IsAny<CancellationToken>())).ReturnsAsync(tx);
-        _mci.Setup(c => c.TopupAsync(tx.Id, tx.MobileNumber, tx.Amount, tx.CorrelationId, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new PSP.TopupService.Application.Topups.Clients.HamrahAvalException(tx.Id, "fail"));
-        _bank.Setup(b => b.ReverseAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<Money>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("bank down"));
-
-        var handler = BuildHandler();
-        var result = await handler.Handle(Command(tx.Id), CancellationToken.None);
-
-        // Aggregate stays in TopupInProgress with a Failed reversal awaiting manual intervention.
-        result.FinalStatus.Should().Be(nameof(TopupStatus.TopupInProgress));
-        tx.Reverse!.Status.Should().Be(ReverseStatus.Failed);
+        tx.Reverse!.Status.Should().Be(ReverseStatus.Initiated);
+        _outbox.Verify(o => o.EnqueueReverseRequestedAsync(
+            tx.Id, tx.BankReference!, tx.Amount, TopupFailureReason.TopupProviderError.ToString(), tx.CorrelationId,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -101,7 +79,6 @@ public class PerformTopupCommandHandlerTests
 
         result.WasIdempotentReplay.Should().BeTrue();
         _mci.Verify(c => c.TopupAsync(It.IsAny<Guid>(), It.IsAny<MobileNumber>(), It.IsAny<Money>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
-        _bank.Verify(b => b.ReverseAsync(It.IsAny<Guid>(), It.IsAny<TransactionReference>(), It.IsAny<Money>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -111,13 +88,12 @@ public class PerformTopupCommandHandlerTests
             .ReturnsAsync((TopupTransaction?)null);
 
         var handler = BuildHandler();
-
         var act = () => handler.Handle(Command(Guid.NewGuid()), CancellationToken.None);
         await act.Should().ThrowAsync<NotFoundException>();
     }
 
     private PerformTopupCommandHandler BuildHandler() =>
-        new(_repository.Object, _mci.Object, _bank.Object, _outbox.Object, NullLogger<PerformTopupCommandHandler>.Instance);
+        new(_repository.Object, _mci.Object, _outbox.Object, NullLogger<PerformTopupCommandHandler>.Instance);
 
     private static PerformTopupCommand Command(Guid topupId) => new() { TopupId = topupId, MessageId = Guid.NewGuid() };
 

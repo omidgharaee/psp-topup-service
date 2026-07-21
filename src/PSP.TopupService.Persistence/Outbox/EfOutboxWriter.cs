@@ -60,6 +60,12 @@ public sealed class EfOutboxWriter : IOutboxWriter
         return AddAsync(OutboxRoutes.TopupEventsExchange, payload, correlationId, cancellationToken);
     }
 
+    public Task EnqueueReverseRequestedAsync(Guid topupId, TransactionReference originalPaymentReference, Money amount, string reason, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        var payload = _serializer.SerializeReverseRequested(topupId, originalPaymentReference, amount, reason, correlationId);
+        return AddAsync(OutboxRoutes.ReverseRequestedRoutingKey, payload, correlationId, cancellationToken);
+    }
+
     private async Task AddAsync(string routingKey, string payload, Guid correlationId, CancellationToken cancellationToken, DateTime? processAfterUtc = null)
     {
         var message = new OutboxMessage
@@ -97,4 +103,5 @@ public static class OutboxRoutes
     public const string TopupEventsExchange = "topup.events";
     public const string PaymentRequestedRoutingKey = "payment.requests";
     public const string AdviceRequestedRoutingKey = "advice.requests";
+    public const string ReverseRequestedRoutingKey = "reverse.requests";
 }

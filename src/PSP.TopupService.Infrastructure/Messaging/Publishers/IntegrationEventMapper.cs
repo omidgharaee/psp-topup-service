@@ -36,6 +36,8 @@ public sealed class IntegrationEventMapper : IIntegrationEventMapper
                 nameof(TopupCompletedEvent) or "TopupCompleted" => BuildTopupCompleted(payloadElement, correlationId, occurredOnUtc),
                 nameof(PaymentReversedEvent) or "PaymentReversed" => BuildPaymentReversed(payloadElement, correlationId, occurredOnUtc),
                 nameof(AdviceRequestedEvent) or "AdviceRequested" => BuildAdviceRequested(payloadElement, correlationId, occurredOnUtc),
+                nameof(AdviceCompletedEvent) or "AdviceCompleted" => BuildAdviceCompleted(payloadElement, correlationId, occurredOnUtc),
+                nameof(ReverseRequestedEvent) or "ReverseRequested" => BuildReverseRequested(payloadElement, correlationId, occurredOnUtc),
                 _ => null,
             };
         }
@@ -91,6 +93,25 @@ public sealed class IntegrationEventMapper : IIntegrationEventMapper
             amount: TryGetDecimal(p, "amount") ?? 0m,
             currency: TryGetString(p, "currency") ?? "IRR",
             adviceAttempt: TryGetInt(p, "adviceAttempt") ?? 0,
+            correlationId: correlationId,
+            occurredOnUtc: occurredOnUtc);
+
+    private static AdviceCompletedEvent BuildAdviceCompleted(JsonElement p, Guid correlationId, DateTime occurredOnUtc) =>
+        new(
+            topupId: TryGetGuid(p, "topupId") ?? Guid.Empty,
+            adviceReference: TryGetString(p, "adviceReference") ?? string.Empty,
+            adviceSource: TryGetString(p, "adviceSource") ?? string.Empty,
+            correlationId: correlationId,
+            occurredOnUtc: occurredOnUtc);
+
+    private static ReverseRequestedEvent BuildReverseRequested(JsonElement p, Guid correlationId, DateTime occurredOnUtc) =>
+        new(
+            topupId: TryGetGuid(p, "topupId") ?? Guid.Empty,
+            originalReference: TryGetString(p, "originalReference") ?? string.Empty,
+            originalSource: TryGetString(p, "originalSource") ?? string.Empty,
+            amount: TryGetDecimal(p, "amount") ?? 0m,
+            currency: TryGetString(p, "currency") ?? "IRR",
+            reason: TryGetString(p, "reason") ?? string.Empty,
             correlationId: correlationId,
             occurredOnUtc: occurredOnUtc);
 
