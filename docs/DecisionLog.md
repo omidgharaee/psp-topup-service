@@ -554,3 +554,45 @@ evolution, must return RFC7807 errors, and must never contain business logic.
   entry points.
 - The correlation id set by the controller propagates into every log scope and
   outbox message produced during the request.
+
+---
+
+## ADR-0019 — Observability: Serilog + correlation middleware + health probes
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+A payment system is unmanageable without end-to-end tracing, structured logs
+and reliable readiness probes. The default ASP.NET Core logger is inadequate:
+it does not carry correlation ids, is not structured, and has no async sink.
+
+### Decision
+- **Serilog** bootstraps before the host runs (`ReadFrom.Configuration`) so
+  even startup failures are logged. Output goes through an async console sink
+  with `InvariantCulture` formatting so numeric fields never vary by locale.
+  Persian log messages are emitted throughout (pipeline + consumer layer).
+- **CorrelationIdMiddleware** reads `X-Correlation-Id` from the request (or
+  generates one), writes it to the response header and into the ambient
+  `ICorrelationContext`. Every log scope, outbox message and broker header
+  carries the same id end-to-end.
+- **RequestLoggingMiddleware** emits one structured entry per request with
+  method/path/status/elapsed/correlation.
+- **GlobalExceptionHandlerMiddleware** converts every unhandled exception to
+  RFC 7807 `ProblemDetails` (400 validation, 404 not-found, 409 concurrency,
+  422 business, 503 infrastructure, 500 unknown) with a stable `type` URL and
+  the correlation id.
+- **Health endpoints** at `/health`, `/health/live`, `/health/ready`. Liveness
+  has no dependency checks; readiness probes PostgreSQL, RabbitMQ and the two
+  external mocks (Bank, Hamrah-e-Aval) with appropriate degraded/unhealthy
+  tags. A custom `RabbitMqHealthCheck` (TCP connect) avoids version churn.
+
+### Consequences
+- One trace id per business operation flows API -> outbox -> broker ->
+  consumer -> external call, regardless of how many hops are involved.
+- Failures always surface as structured ProblemDetails; clients get a stable
+  error code and a correlation id to quote in support tickets.
+- Readiness probes fail fast on downstream outages so the orchestrator can
+  stop routing traffic before customers are affected.
+- 4 unit tests cover the correlation middleware (echo, generate, malformed,
+  next-call).
