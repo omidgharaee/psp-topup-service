@@ -521,3 +521,36 @@ Introduce a two-phase finalization:
   mid-retry is invisible — the next scheduled attempt resumes.
 - 9 unit tests cover the advice flow (success, retry schedule, terminal
   failure-no-reversal, replay, not-found, plus 4 aggregate-level transitions).
+
+---
+
+## ADR-0018 — Thin API controllers with URL-segment versioning
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+The API is the single inbound entry point. It must be versioned for future
+evolution, must return RFC7807 errors, and must never contain business logic.
+
+### Decision
+- `TopupsController` is the only controller. It is intentionally thin: it maps
+  the request to a MediatR command/query, populates the correlation context
+  from headers (`X-Correlation-Id`, `TraceIdentifier`, principal, remote IP),
+  and translates the Result into HTTP.
+- API versioning via URL segment (`/api/v{version}/topups`) using
+  `Asp.Versioning.Mvc`. Default version `1.0` is reported and assumed when
+  unversioned requests arrive.
+- Validation failures map to `ValidationProblemDetails` (RFC 7807) with
+  per-field errors. Business `Result.Error` values map to plain
+  `ProblemDetails` keyed by stable error codes.
+- Swagger UI wired for development.
+
+### Consequences
+- All HTTP-layer concerns (status codes, problem details, versioning) live in
+  the controller; the domain and application layers stay HTTP-unaware.
+- The same MediatR pipeline (validation / logging / performance / transaction)
+  serves both the API and the consumers, so behaviour is identical across
+  entry points.
+- The correlation id set by the controller propagates into every log scope and
+  outbox message produced during the request.
