@@ -649,3 +649,35 @@ testing.
 - The MCI HTTP client with Polly (ADR-0015) is preserved unchanged.
 - 11 new/updated unit tests cover the event-driven advice and reversal paths
   and the new apply-result handlers.
+
+---
+
+## ADR-0021 — Architecture tests gate the dependency rule
+
+**Status:** Accepted
+**Date:** 2026-07-20
+
+### Context
+Clean Architecture is only valuable if the dependency rule is actually
+enforced. Once a team grows, a developer can easily add `using
+Microsoft.EntityFrameworkCore` to a Domain file or call a repository from a
+controller; reviews miss it, and the architecture silently degrades.
+
+### Decision
+Add `PSP.TopupService.ArchitectureTests` (xUnit + `NetArchTest.Rules`) that
+fails the build on every Clean-Architecture violation:
+
+- Per-layer dependency matrix: SharedKernel / Domain / Contracts / Application /
+  Infrastructure / Persistence / Api / Worker each may only depend on the
+  inward layers.
+- Domain and Application must be EF-Core-free and MediatR-free.
+- Repository implementations must live in Persistence.
+- Controllers must not reference Persistence (use MediatR).
+- Api ↔ Worker must not cross-reference.
+
+### Consequences
+- The CI pipeline (test.yml) runs these alongside unit tests, so a PR that
+  violates the rule is rejected automatically.
+- Refactors that touch layering are surfaced immediately with the offending
+  type names in the failure message.
+- 14 architecture tests pin the rules today; new layers add a symmetric pair.
