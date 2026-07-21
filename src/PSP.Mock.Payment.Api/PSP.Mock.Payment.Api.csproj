@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>PSP.Mock.Payment.Api</RootNamespace>
+    <Description>Payment-service simulator: consumes PaymentRequested / AdviceRequested / ReverseRequested and publishes PaymentCompleted / AdviceCompleted / PaymentReversed via RabbitMQ.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PSP.TopupService.Contracts\PSP.TopupService.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="StyleCop.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

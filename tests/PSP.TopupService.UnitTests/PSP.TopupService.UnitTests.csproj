@@ -1,26 +1,38 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <RootNamespace>PSP.TopupService.UnitTests</RootNamespace>
     <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Unit tests should not run code-style rules as errors; keep them readable. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="6.0.4" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Moq" />
+    <PackageReference Include="Bogus" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="FluentAssertions" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\PSP.TopupService.SharedKernel\PSP.TopupService.SharedKernel.csproj" />
     <ProjectReference Include="..\..\src\PSP.TopupService.Domain\PSP.TopupService.Domain.csproj" />
     <ProjectReference Include="..\..\src\PSP.TopupService.Application\PSP.TopupService.Application.csproj" />
+    <ProjectReference Include="..\..\src\PSP.TopupService.Persistence\PSP.TopupService.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\PSP.TopupService.Infrastructure\PSP.TopupService.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\PSP.TopupService.Contracts\PSP.TopupService.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\PSP.TopupService.Api\PSP.TopupService.Api.csproj" />
   </ItemGroup>
 
 </Project>

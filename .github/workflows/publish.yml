@@ -1,0 +1,118 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semantic version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  publish:
+    name: Publish & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
+      - name: Restore
+        run: dotnet restore PSP.TopupService.sln
+
+      - name: Build (Release)
+        run: >
+          dotnet build PSP.TopupService.sln
+          --configuration Release
+          --no-restore
+          -p:ContinuousIntegrationBuild=true
+          -p:VersionPrefix=${{ steps.ver.outputs.version }}
+
+      - name: Publish API
+        run: >
+          dotnet publish
+          src/PSP.TopupService.Api/PSP.TopupService.Api.csproj
+          --configuration Release
+          --no-build
+          --output ./artifacts/api
+          -p:VersionPrefix=${{ steps.ver.outputs.version }}
+
+      - name: Publish Worker
+        run: >
+          dotnet publish
+          src/PSP.TopupService.Worker/PSP.TopupService.Worker.csproj
+          --configuration Release
+          --no-build
+          --output ./artifacts/worker
+          -p:VersionPrefix=${{ steps.ver.outputs.version }}
+
+      - name: Publish Mock.Payment
+        run: >
+          dotnet publish
+          src/PSP.Mock.Payment.Api/PSP.Mock.Payment.Api.csproj
+          --configuration Release
+          --no-build
+          --output ./artifacts/mock-payment
+          -p:VersionPrefix=${{ steps.ver.outputs.version }}
+
+      - name: Publish Mock.HamrahAval
+        run: >
+          dotnet publish
+          src/PSP.Mock.HamrahAval.Api/PSP.Mock.HamrahAval.Api.csproj
+          --configuration Release
+          --no-build
+          --output ./artifacts/mock-hamrahaval
+          -p:VersionPrefix=${{ steps.ver.outputs.version }}
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist
+          tar -czf dist/topup-api-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/api .
+          tar -czf dist/topup-worker-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/worker .
+          tar -czf dist/mock-payment-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/mock-payment .
+          tar -czf dist/mock-hamrahaval-${{ steps.ver.outputs.version }}.tar.gz -C artifacts/mock-hamrahaval .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Release ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          files: |
+            dist/*.tar.gz

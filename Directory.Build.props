@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+
+  <!--
+    Directory.Build.props is imported by EVERY project in the solution tree.
+    It establishes the common compilation, language and analysis settings so
+    that all projects are consistent and there is a single place to evolve them.
+  -->
+
+  <PropertyGroup>
+    <!-- Target framework: .NET 10 across the board -->
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Identity -->
+    <Authors>PSP Topup Team</Authors>
+    <Company>PSP</Company>
+    <Product>PSP.TopupService</Product>
+    <Copyright>Copyright (c) $(Authors) - $([System.DateTime]::Now.Year)</Copyright>
+
+    <!--
+      Semantic Versioning. We lock the major.minor.patch in source; CI appends
+      the build metadata (pre-release + commit hash) during publishing so local
+      builds always produce a clean, reproducible version.
+    -->
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <!-- Build output hygiene -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS1591</WarningsNotAsErrors>
+
+    <!--
+      Microsoft.AspNetCore.OpenApi ships a source generator that is incompatible
+      with Microsoft.OpenApi 3.x (assigns to a readonly property). We will use
+      Swashbuckle for OpenAPI/Swagger generation instead, so disable the built-in
+      generator. This is also the more feature-complete choice for enterprise APIs.
+    -->
+    <DisableMicrosoftOpenApiSourceGenerator>true</DisableMicrosoftOpenApiSourceGenerator>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Deterministic, reproducible builds -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <Deterministic>true</Deterministic>
+    <NeutralLanguage>en</NeutralLanguage>
+
+  </PropertyGroup>
+
+
+</Project>
