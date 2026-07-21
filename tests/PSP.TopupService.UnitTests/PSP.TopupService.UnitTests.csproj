@@ -17,6 +17,7 @@
     <PackageReference Include="Moq" />
     <PackageReference Include="Bogus" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +32,7 @@
     <ProjectReference Include="..\..\src\PSP.TopupService.Persistence\PSP.TopupService.Persistence.csproj" />
     <ProjectReference Include="..\..\src\PSP.TopupService.Infrastructure\PSP.TopupService.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\PSP.TopupService.Contracts\PSP.TopupService.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\PSP.TopupService.Api\PSP.TopupService.Api.csproj" />
   </ItemGroup>
 
 </Project>
